@@ -8,6 +8,8 @@
 #include <string>
 #include <algorithm>
 #include <cmath>
+#include <chrono>
+#include <mutex>
 using str = std::string;
 
 
@@ -44,17 +46,19 @@ struct Order {
     str price;
     unsigned int intPrice;
     unsigned int quantity;
-    unsigned int timestamp;
+    std::chrono::milliseconds timestamp;
     unsigned int traderID;
 
-    Order(int o, Side s, str p, int q, int ti, int tr) : 
-    orderID(o), side(s), price(p), quantity(q), timestamp(ti), traderID(tr) {        
+    Order(int o, Side s, str p, int q, int tr) : 
+    orderID(o), side(s), price(p), quantity(q), traderID(tr) {        
         if (quantity == 0) {
             throw std::invalid_argument("Quantity must be positive.");
         }
         if (!isValidPrice(price)) {
             throw std::invalid_argument("Price must be have at most 2 decimal places and be positive. (Ex. 10.00, 123.45)");
         }
+        auto now = std::chrono::high_resolution_clock::now();
+        timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
         intPrice = convertPriceToInt(price);
     };
 };
@@ -62,19 +66,18 @@ struct Order {
 
 class OrderBook {
     private:
+        std::mutex mtx;
         std::map<int, std::deque<int>> bids;
         std::map<int, int> bid_quantities;
         std::map<int, std::deque<int>> asks;
         std::map<int, int> ask_quantities;
         std::unordered_map<int, Order> allOrders;
-    
-    friend class OrderBookTest;
-    
+        static int nextOrderID;
+
     public:
-    
-    void addOrder(Order order);
-    void cancelOrder(Order order);
-    void modifyOrder(Order old_order, Order new_order);
-    MarketData getBid();
-    MarketData getAsk();
+        void addOrder(Order order);
+        void cancelOrder(Order order);
+        void modifyOrder(Order old_order, Order new_order);
+        MarketData getBid();
+        MarketData getAsk();
 };

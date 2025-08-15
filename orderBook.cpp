@@ -1,7 +1,12 @@
 #include "orderBook.h"
 
 
+int OrderBook::nextOrderID = 1;
+
+
 void OrderBook::addOrder(Order order) {
+    std::lock_guard<std::mutex> lock(mtx);
+    if (order.orderID == 0) order.orderID = nextOrderID++;
     if (allOrders.count(order.orderID) == 0) allOrders.insert({order.orderID, order});
     else throw std::invalid_argument("Order ID already exists. ID must be unique.");
     
@@ -19,6 +24,7 @@ void OrderBook::addOrder(Order order) {
 
 
 void OrderBook::cancelOrder(Order order) {
+    std::lock_guard<std::mutex> lock(mtx);
     if (allOrders.count(order.orderID) == 0) throw std::invalid_argument("Order does not exist.");
     else allOrders.erase(order.orderID);
 
@@ -44,12 +50,14 @@ void OrderBook::cancelOrder(Order order) {
 
 
 void OrderBook::modifyOrder(Order old_order, Order new_order) {
+    std::lock_guard<std::mutex> lock(mtx);
     cancelOrder(old_order);
     addOrder(new_order);
 }
 
 
 MarketData OrderBook::getBid() {
+    std::lock_guard<std::mutex> lock(mtx);
     if (!bids.empty()) {
         auto bestBid = bids.rbegin(); // the best bid is the highest price
         auto bestBidQuantity = bid_quantities.rbegin();
@@ -60,6 +68,7 @@ MarketData OrderBook::getBid() {
 
 
 MarketData OrderBook::getAsk() {
+    std::lock_guard<std::mutex> lock(mtx);
     if (!asks.empty()) {
         auto bestAsk = asks.begin(); // the best ask is the lowest price
         auto bestAskQuantity = ask_quantities.begin();
