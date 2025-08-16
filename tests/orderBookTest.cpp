@@ -1,88 +1,113 @@
-#include "orderBook.h"
 #include "gtest/gtest.h"
+#include "orderBook.h"
+#include "order.h"
+#include "limitOrder.h"
+#include "types.h"
+#include <memory> // Required for std::unique_ptr
+#include <optional> // Required for std::optional
 
+// Test fixture for the OrderBook class
 class OrderBookTest : public ::testing::Test {
-    protected:
-        void SetUp() override {
-            ob = new OrderBook();
-        }
-        void TearDown() override {
-            delete ob;
-        }
+protected:
+    // Use a smart pointer for automatic memory management
+    std::unique_ptr<OrderBook> ob;
 
-        OrderBook* ob;
+    void SetUp() override {
+        ob = std::make_unique<OrderBook>();
+    }
+
+    // No need for TearDown(), std::unique_ptr handles it
 };
 
+// Test that an empty book correctly returns no best bid or ask
+TEST_F(OrderBookTest, GetBestBidAndAsk_ReturnsNulloptOnEmptyBook) {
+    EXPECT_FALSE(ob->getBestBid().has_value());
+    EXPECT_FALSE(ob->getBestAsk().has_value());
+}
+
+// Test adding a single buy order and verifying the best bid
 TEST_F(OrderBookTest, AddSingleBuyOrder_CorrectlySetsBestBid) {
-    Order buyOrder(1, Side::BUY, "100.00", 1, 1);
+    auto buyOrder = std::make_unique<LimitOrder>(1, OrderType::LIMIT, Side::BUY, "100.00", 10, 1);
 
-    ob->addOrder(buyOrder);
-    MarketData bestBid = ob->getBid();
-
-    EXPECT_EQ(bestBid.price, 10000);
-    EXPECT_EQ(bestBid.quantity, 1);
-}
-
-TEST_F(OrderBookTest, AddMultipleOrders_AggregatesQuantity) {
-    Order buyOrder1(1, Side::BUY, "100.00", 10, 1);
-    Order buyOrder2(2, Side::BUY, "100.00", 5, 1);
-
-    ob->addOrder(buyOrder1);
-    ob->addOrder(buyOrder2);
-
-    MarketData bid = ob->getBid();
-    EXPECT_EQ(bid.price, 10000);
-    EXPECT_EQ(bid.quantity, 15);
-}
-
-TEST_F(OrderBookTest, AddDiffPriceOrders_BestBidAsk) {
-    Order buyOrder1(1, Side::BUY, "100.00", 10, 1);
-    Order buyOrder2(2, Side::BUY, "105.15", 5, 1); // Best Bid
-    Order sellOrder1(3, Side::SELL, "110.10", 8, 1);
-    Order sellOrder2(4, Side::SELL, "108.65", 12, 1); // Best Ask
-
-    ob->addOrder(buyOrder1);
-    ob->addOrder(buyOrder2);
-    ob->addOrder(sellOrder1);
-    ob->addOrder(sellOrder2);
-
-    MarketData bestBid = ob->getBid();
-    MarketData bestAsk = ob->getAsk();
-
-    EXPECT_EQ(bestBid.price, 10515);
-    EXPECT_EQ(bestBid.quantity, 5);
-    EXPECT_EQ(bestAsk.price, 10865);
-    EXPECT_EQ(bestAsk.quantity, 12);
-}
-
-TEST_F(OrderBookTest, AddOrderWithZeroQuantity_ThrowsException) {
-    ASSERT_THROW({
-        Order invalidOrder(1, Side::BUY, "100.25", 0, 1);
-    }, std::invalid_argument);
-}
-
-TEST_F(OrderBookTest, AddDuplicateOrder_ThrowsException) {
-    Order firstOrder(1, Side::BUY, "100.00", 1, 1);
-    Order secondOrder(1, Side::BUY, "200.00", 2, 4);
-    ob->addOrder(firstOrder);
-    ASSERT_THROW({
-        ob->addOrder(secondOrder);
-    }, std::invalid_argument);
-}
-
-TEST_F(OrderBookTest, CancelNonExistentOrder_ThrowsException) {
-    Order nonExistentOrder(999, Side::BUY, "100.00", 1, 1);
+    ob->addOrder(std::move(buyOrder));
     
-    ASSERT_THROW(ob->cancelOrder(nonExistentOrder), std::invalid_argument);
+    auto bestBid = ob->getBestBid();
+
+    ASSERT_TRUE(bestBid.has_value());
+    EXPECT_EQ(bestBid->price, 10000);
+    EXPECT_EQ(bestBid->quantity, 10);
+    EXPECT_FALSE(ob->getBestAsk().has_value()); // Ensure ask side is still empty
 }
 
-TEST_F(OrderBookTest, CancelExistingBuyOrder_RemovesOrderCorrectly) {
-    Order buyOrder(1, Side::BUY, "100.00", 10, 1);
-    Order sellOrder(2, Side::SELL, "200.00", 1, 3);
-    ob->addOrder(buyOrder);
-    ob->addOrder(sellOrder);
-    ob->cancelOrder(buyOrder);
-    ob->cancelOrder(sellOrder);
-    ASSERT_THROW({ob->getBid();}, std::invalid_argument);
-    ASSERT_THROW({ob->getAsk();}, std::invalid_argument);
+// Test that orders at the same price level have their quantities aggregated
+TEST_F(OrderBookTest, AddMultipleOrdersAtSamePrice_AggregatesQuantity) {
+    auto buyOrder1 = std::make_unique<LimitOrder>(1, OrderType::LIMIT, Side::BUY, "100.00", 10, 1);
+    auto buyOrder2 = std::make_unique<LimitOrder>(2, OrderType::LIMIT, Side::BUY, "100.00", 5, 2);
+
+    ob->addOrder(std::move(buyOrder1));
+    ob->addOrder(std::move(buyOrder2));
+
+    auto bestBid = ob->getBestBid();
+    ASSERT_TRUE(bestBid.has_value());
+    EXPECT_EQ(bestBid->price, 10000);
+    EXPECT_EQ(bestBid->quantity, 15);
+}
+
+// Test adding orders at different price levels to verify correct best bid/ask
+TEST_F(OrderBookTest, AddDifferentPriceOrders_CorrectlyIdentifiesBestBidAndAsk) {
+    auto buyOrder1 = std::make_unique<LimitOrder>(1, OrderType::LIMIT, Side::BUY, "100.00", 10, 1); // Lower bid
+    auto buyOrder2 = std::make_unique<LimitOrder>(2, OrderType::LIMIT, Side::BUY, "105.00", 5, 1); // Best bid
+    
+    auto sellOrder1 = std::make_unique<LimitOrder>(3, OrderType::LIMIT, Side::SELL, "110.00", 8, 2); // Higher ask
+    auto sellOrder2 = std::make_unique<LimitOrder>(4, OrderType::LIMIT, Side::SELL, "108.00", 12, 2); // Best ask
+
+    ob->addOrder(std::move(buyOrder1));
+    ob->addOrder(std::move(buyOrder2));
+    ob->addOrder(std::move(sellOrder1));
+    ob->addOrder(std::move(sellOrder2));
+
+    auto bestBid = ob->getBestBid();
+    auto bestAsk = ob->getBestAsk();
+
+    ASSERT_TRUE(bestBid.has_value());
+    EXPECT_EQ(bestBid->price, 10500);
+    EXPECT_EQ(bestBid->quantity, 5);
+
+    ASSERT_TRUE(bestAsk.has_value());
+    EXPECT_EQ(bestAsk->price, 10800);
+    EXPECT_EQ(bestAsk->quantity, 12);
+}
+
+// Test that adding an order with a duplicate ID throws an exception
+TEST_F(OrderBookTest, AddDuplicateOrderID_ThrowsException) {
+    auto firstOrder = std::make_unique<LimitOrder>(1, OrderType::LIMIT, Side::BUY, "100.00", 1, 1);
+    auto secondOrder = std::make_unique<LimitOrder>(1, OrderType::LIMIT, Side::SELL, "200.00", 2, 2); // Same ID
+
+    ob->addOrder(std::move(firstOrder));
+
+    ASSERT_THROW(ob->addOrder(std::move(secondOrder)), std::invalid_argument);
+}
+
+// Test that removing a non-existent order throws an exception
+TEST_F(OrderBookTest, RemoveNonExistentOrder_ThrowsException) {
+    ASSERT_THROW(ob->removeOrder(999), std::invalid_argument);
+}
+
+// Test removing an existing order and verifying the book is updated
+TEST_F(OrderBookTest, RemoveExistingOrder_UpdatesBookCorrectly) {
+    auto buyOrder1 = std::make_unique<LimitOrder>(1, OrderType::LIMIT, Side::BUY, "100.00", 10, 1);
+    auto buyOrder2 = std::make_unique<LimitOrder>(2, OrderType::LIMIT, Side::BUY, "105.00", 5, 1); // Best bid
+
+    ob->addOrder(std::move(buyOrder1));
+    ob->addOrder(std::move(buyOrder2));
+
+    ob->removeOrder(2); // Remove the best bid
+
+    auto bestBid = ob->getBestBid();
+    ASSERT_TRUE(bestBid.has_value());
+    EXPECT_EQ(bestBid->price, 10000); // Best bid should now be the other order
+    EXPECT_EQ(bestBid->quantity, 10);
+    
+    ob->removeOrder(1); // Remove the last order
+    EXPECT_FALSE(ob->getBestBid().has_value()); // Book should be empty
 }

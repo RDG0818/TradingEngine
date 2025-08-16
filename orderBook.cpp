@@ -1,79 +1,86 @@
 #include "orderBook.h"
 
 
-int OrderBook::nextOrderID = 1;
-
-
-void OrderBook::addOrder(Order order) {
+void OrderBook::addOrder(std::unique_ptr<LimitOrder> order) {
     std::lock_guard<std::mutex> lock(mtx);
-    if (order.orderID == 0) order.orderID = nextOrderID++;
-    if (allOrders.count(order.orderID) == 0) allOrders.insert({order.orderID, order});
-    else throw std::invalid_argument("Order ID already exists. ID must be unique.");
+
+    const OrderID orderID = order->getOrderID();
+    const Price price = order->getPrice();
+    const Quantity quantity = order->getQuantity();
+    const Side side = order->getSide();
+
+    if (allOrders.count(order->getOrderID()) > 0) 
+        throw std::invalid_argument("Order ID already exists. ID must be unique.");
     
-    switch (order.side) {
+    switch (side) {
         case Side::BUY:
-            bids[order.intPrice].push_back(order.orderID);
-            bid_quantities[order.intPrice] += order.quantity;
+            bids[price].push_back(orderID);
+            bid_quantities[price] += quantity;
             break;
         case Side::SELL:
-            asks[order.intPrice].push_back(order.orderID);
-            ask_quantities[order.intPrice] += order.quantity;
+            asks[price] .push_back(orderID);
+            ask_quantities[price] += quantity;
             break;
     }
+
+    allOrders[order->getOrderID()] = std::move(order);
 };
 
 
-void OrderBook::cancelOrder(Order order) {
+void OrderBook::removeOrder(OrderID orderID) {
     std::lock_guard<std::mutex> lock(mtx);
-    if (allOrders.count(order.orderID) == 0) throw std::invalid_argument("Order does not exist.");
-    else allOrders.erase(order.orderID);
+    auto it = allOrders.find(orderID);
+    if (it == allOrders.end()) {
+        throw std::invalid_argument("Order to cancel does not exist.");
+    };
+    
+    Order* order = it->second.get();
 
-    switch (order.side) {
+    auto limitOrder = static_cast<LimitOrder*>(order); 
+    Price price = limitOrder->getPrice();
+    Quantity quantity = limitOrder->getQuantity(); 
+    switch (order->getSide()) {
         case Side::BUY: {
-            std::deque<int>& bidDeque = bids[order.intPrice];
-            bidDeque.erase(std::remove(bidDeque.begin(), bidDeque.end(), order.orderID), bidDeque.end());
-            if (bidDeque.empty()) bids.erase(order.intPrice);
-            bid_quantities[order.intPrice] -= order.quantity;
-            if (bid_quantities[order.intPrice] == 0) bid_quantities.erase(order.intPrice);
+            std::deque<OrderID>& bidDeque = bids.at(price);
+            bidDeque.erase(std::remove(bidDeque.begin(), bidDeque.end(), orderID), bidDeque.end());
+            if (bidDeque.empty()) bids.erase(price);
+            bid_quantities.at(price) -= quantity;
+            if (bid_quantities.at(price) == 0) bid_quantities.erase(price);
             break;
         }
         case Side::SELL: {
-            std::deque<int>& askDeque = asks[order.intPrice];
-            askDeque.erase(std::remove(askDeque.begin(), askDeque.end(), order.orderID), askDeque.end());
-            if (askDeque.empty()) asks.erase(order.intPrice);
-            ask_quantities[order.intPrice] -= order.quantity;
-            if (ask_quantities[order.intPrice] == 0) ask_quantities.erase(order.intPrice);
+            std::deque<OrderID>& askDeque = asks.at(price);
+            askDeque.erase(std::remove(askDeque.begin(), askDeque.end(), orderID), askDeque.end());
+            if (askDeque.empty()) asks.erase(price);
+            ask_quantities.at(price) -= quantity;
+            if (ask_quantities.at(price) == 0) ask_quantities.erase(price);
             break;
         }
     }
+        
+    allOrders.erase(it);
 };
 
 
-void OrderBook::modifyOrder(Order old_order, Order new_order) {
+std::optional<MarketData> OrderBook::getBestBid() {
     std::lock_guard<std::mutex> lock(mtx);
-    cancelOrder(old_order);
-    addOrder(new_order);
-}
-
-
-MarketData OrderBook::getBid() {
-    std::lock_guard<std::mutex> lock(mtx);
-    if (!bids.empty()) {
-        auto bestBid = bids.rbegin(); // the best bid is the highest price
-        auto bestBidQuantity = bid_quantities.rbegin();
-        return MarketData(bestBid->first, bestBidQuantity->second);
+    if (bids.empty()) {
+        return std::nullopt;
     }
-    throw std::invalid_argument("There are no bid orders.");
+    const auto& [price, orders] = *bids.rbegin();
+    return MarketData(price, bid_quantities.at(price));
 }
 
 
-MarketData OrderBook::getAsk() {
+std::optional<MarketData> OrderBook::getBestAsk() {
     std::lock_guard<std::mutex> lock(mtx);
-    if (!asks.empty()) {
-        auto bestAsk = asks.begin(); // the best ask is the lowest price
-        auto bestAskQuantity = ask_quantities.begin();
-        return MarketData(bestAsk->first, bestAskQuantity->second);
+    if (asks.empty()) {
+        return std::nullopt;
     }
-        throw std::invalid_argument("There are no ask orders.");
+    const auto& [price, orders] = *asks.begin();
+    return MarketData(price, ask_quantities.at(price));
 }
 
+bool OrderBook::isEmpty() {
+    return allOrders.empty();
+}
