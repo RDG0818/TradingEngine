@@ -3,6 +3,7 @@
 #include "orderBook.h"
 #include "types.h"
 #include "eventDispatcher.h"
+#include "events.h"
 #include <memory>
 
 class MatchingEngine {

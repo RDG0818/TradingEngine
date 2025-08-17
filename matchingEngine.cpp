@@ -1,4 +1,4 @@
-#include <matchingEngine.h>
+#include "matchingEngine.h"
 
 MatchingEngine::MatchingEngine(OrderBook& orderBook, EventDispatcher& eventDispatcher)
     : book(orderBook), dispatcher(eventDispatcher), nextOrderID(1) {}
@@ -12,13 +12,46 @@ void MatchingEngine::processOrder(std::unique_ptr<Order> order) {
         }
         else {
             order->setOrderStatus(OrderStatus::CANCELLED);
-            // TODO: Add OrderCancelled Event and logic for marketOrder
+            dispatcher.publish(OrderCancelledEvent{order->getOrderID(), order->getQuantity()});
         }
     }
 }
 
 void MatchingEngine::matchOrder(Order* incomingOrder) {
-    // TODO: Finish this logic
+    while (incomingOrder->getQuantity() > 0) {
+        std::optional<MarketData> bestOpposingLevel = (incomingOrder->getSide() == Side::BUY) ? book.getBestAsk() : book.getBestBid();
+        
+        if (!bestOpposingLevel) break;
+
+        if (incomingOrder->getOrderType() == OrderType::LIMIT) {
+            auto limitOrder = static_cast<LimitOrder*>(incomingOrder);
+            Price limitPrice = limitOrder->getPrice();
+            Price bestOpposingPrice = bestOpposingLevel->price;
+
+            if (incomingOrder->getSide() == Side::BUY && limitPrice < bestOpposingPrice) break;
+            if (incomingOrder->getSide() == Side::SELL && limitPrice > bestOpposingPrice) break;
+        }
+        
+        std::list<OrderID> restingOrderIDs = bestOpposingLevel->orders;
+
+        for (OrderID restingOrderID : restingOrderIDs) {
+           Order* genericRestingOrder = book.getOrder(restingOrderID); 
+           if (!genericRestingOrder) continue;
+           
+           LimitOrder* restingOrder = static_cast<LimitOrder*>(genericRestingOrder);
+
+           Quantity tradeQuantity = std::min(incomingOrder->getQuantity(), restingOrder->getQuantity());
+           Price tradePrice = restingOrder->getPrice();
+
+           createTrade(incomingOrder, restingOrder, tradePrice, tradeQuantity);
+
+           incomingOrder->setQuantity(incomingOrder->getQuantity() - tradeQuantity);
+           book.reduceOrderQuantity(restingOrderID, tradeQuantity); 
+
+           if (incomingOrder->getQuantity() == 0) return;
+           
+        }
+    }
 }
 
 void MatchingEngine::placeRestingLimitOrder(std::unique_ptr<LimitOrder> order) {
@@ -27,10 +60,11 @@ void MatchingEngine::placeRestingLimitOrder(std::unique_ptr<LimitOrder> order) {
 }
 
 void MatchingEngine::createTrade(Order* aggressor, Order* resting, Price tradePrice, Quantity tradeQuantity) {
-    aggressor->setOrderStatus(aggressor->getQuantity() > 0 ? OrderStatus::PARTIALLY_FILLED : OrderStatus::FILLED);
-    resting->setOrderStatus(resting->getQuantity() > 0 ? OrderStatus::PARTIALLY_FILLED : OrderStatus::FILLED);
-    // TODO: Finish logic for TradeExecutedEvent
-   // dispatcher.publish(TradeExecutedEvent{aggressor->getOrderID(), resting->getOrderID(), tradePrice, tradeQuantity});
+    Quantity aggressorRemaining = aggressor->getQuantity() - tradeQuantity;
+    Quantity restingRemaining = resting->getQuantity() - tradeQuantity;
+    aggressor->setOrderStatus(aggressorRemaining > 0 ? OrderStatus::PARTIALLY_FILLED : OrderStatus::FILLED);
+    resting->setOrderStatus(restingRemaining > 0 ? OrderStatus::PARTIALLY_FILLED : OrderStatus::FILLED);
+    dispatcher.publish(TradeExecutedEvent{aggressor->getOrderID(), resting->getOrderID(), tradePrice, tradeQuantity});
 }
 
 

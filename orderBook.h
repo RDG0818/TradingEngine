@@ -14,9 +14,10 @@
 struct MarketData {
     Price price;
     Quantity quantity;
+    const std::list<OrderID>& orders;
 
-    MarketData(Price p, Quantity q) :
-    price(p), quantity(q) {};
+    MarketData(Price p, Quantity q, const std::list<OrderID>& o) :
+    price(p), quantity(q), orders(o) {};
 };
 
 
@@ -33,7 +34,11 @@ class OrderBook {
     public:
         void addOrder(std::unique_ptr<LimitOrder> order);
         void removeOrder(OrderID orderID);
+        void cancelOrder(OrderID orderID);
+        Order* getOrder(OrderID orderID);
+        void reduceOrderQuantity(OrderID orderID, Quantity quantityToReduce);
         std::optional<MarketData> getBestBid();
         std::optional<MarketData> getBestAsk();
         bool isEmpty();
+        bool isSideEmpty(Side side);
 };

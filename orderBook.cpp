@@ -30,7 +30,6 @@ void OrderBook::addOrder(std::unique_ptr<LimitOrder> order) {
 
 
 void OrderBook::removeOrder(OrderID orderID) {
-    std::lock_guard<std::mutex> lock(mtx);
     auto it = allOrders.find(orderID);
     if (it == allOrders.end()) {
         throw std::invalid_argument("Order to cancel does not exist.");
@@ -70,6 +69,42 @@ void OrderBook::removeOrder(OrderID orderID) {
     allOrders.erase(it);
 };
 
+void OrderBook::cancelOrder(OrderID orderID) {
+    std::lock_guard<std::mutex> lock(mtx);
+    removeOrder(orderID);
+}
+
+Order* OrderBook::getOrder(OrderID id) {
+    std::lock_guard<std::mutex> lock(mtx);
+    auto it = allOrders.find(id);
+    if (it != allOrders.end()) {
+        return it->second.get();
+    }
+    return nullptr; 
+}
+
+void OrderBook::reduceOrderQuantity(OrderID orderID, Quantity quantityToReduce) {
+    std::lock_guard<std::mutex> lock(mtx);
+
+    auto allOrdersIt = allOrders.find(orderID);
+    if (allOrdersIt == allOrders.end()) {
+        return;
+    }
+    LimitOrder* limitOrder = static_cast<LimitOrder*>(allOrdersIt->second.get());
+
+    Quantity newQuantity = limitOrder->getQuantity() - quantityToReduce;
+    limitOrder->setQuantity(newQuantity);
+
+    Price price = limitOrder->getPrice();
+    if (limitOrder->getSide() == Side::BUY) {
+        bid_quantities.at(price) -= quantityToReduce;
+    }
+    else {
+        ask_quantities.at(price) -= quantityToReduce;
+    }
+
+    if (newQuantity == 0) removeOrder(orderID); 
+}
 
 std::optional<MarketData> OrderBook::getBestBid() {
     std::lock_guard<std::mutex> lock(mtx);
@@ -77,7 +112,7 @@ std::optional<MarketData> OrderBook::getBestBid() {
         return std::nullopt;
     }
     const auto& [price, orders] = *bids.rbegin();
-    return MarketData(price, bid_quantities.at(price));
+    return MarketData(price, bid_quantities.at(price), orders);
 }
 
 
@@ -87,9 +122,17 @@ std::optional<MarketData> OrderBook::getBestAsk() {
         return std::nullopt;
     }
     const auto& [price, orders] = *asks.begin();
-    return MarketData(price, ask_quantities.at(price));
+    return MarketData(price, ask_quantities.at(price), orders);
 }
 
 bool OrderBook::isEmpty() {
+    std::lock_guard<std::mutex> lock(mtx);
     return allOrders.empty();
 }
+
+bool OrderBook::isSideEmpty(Side side) {  
+    std::lock_guard<std::mutex> lock(mtx);
+    return side == Side::BUY ? bids.empty() : asks.empty();
+}
+
+

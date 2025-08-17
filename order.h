@@ -8,6 +8,10 @@ using str = std::string;
 
 enum class Side { BUY, SELL };
 
+inline Side getOppositeSide(Side side) {
+    return (side == Side::BUY) ? Side::SELL : Side::BUY;
+};
+
 enum class OrderType {
     LIMIT,
     MARKET

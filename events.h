@@ -1,5 +1,4 @@
 #pragma once
-
 #include "types.h"
 
 struct TradeExecutedEvent {
@@ -12,5 +11,10 @@ struct TradeExecutedEvent {
 struct OrderAcceptedEvent {
     OrderID orderID;
     Price price;
+    Quantity quantity;
+};
+
+struct OrderCancelledEvent {
+    OrderID orderID;
     Quantity quantity;
 };

@@ -111,3 +111,39 @@ TEST_F(OrderBookTest, RemoveExistingOrder_UpdatesBookCorrectly) {
     ob->removeOrder(1); // Remove the last order
     EXPECT_FALSE(ob->getBestBid().has_value()); // Book should be empty
 }
+
+TEST_F(OrderBookTest, ReduceOrderQuantity_PartialFill) {
+    auto buyOrder = std::make_unique<LimitOrder>(1, OrderType::LIMIT, Side::BUY, "100.00", 15, 1);
+    ob->addOrder(std::move(buyOrder));
+
+    // Reduce the order's quantity by 5 (a partial fill)
+    ob->reduceOrderQuantity(1, 5);
+
+    // Check the aggregated quantity at the price level
+    auto bestBid = ob->getBestBid();
+    ASSERT_TRUE(bestBid.has_value());
+    EXPECT_EQ(bestBid->quantity, 10);
+
+    // Check the individual order's quantity
+    Order* order = ob->getOrder(1);
+    ASSERT_NE(order, nullptr);
+    EXPECT_EQ(order->getQuantity(), 10);
+}
+
+TEST_F(OrderBookTest, ReduceOrderQuantity_FullFill) {
+    auto buyOrder1 = std::make_unique<LimitOrder>(1, OrderType::LIMIT, Side::BUY, "100.00", 10, 1);
+    auto buyOrder2 = std::make_unique<LimitOrder>(2, OrderType::LIMIT, Side::BUY, "100.00", 5, 1);
+    ob->addOrder(std::move(buyOrder1));
+    ob->addOrder(std::move(buyOrder2));
+
+    // Fully fill the first order
+    ob->reduceOrderQuantity(1, 10);
+
+    // Check that the first order is completely gone
+    EXPECT_EQ(ob->getOrder(1), nullptr);
+
+    // Check that the aggregated quantity now only reflects the second order
+    auto bestBid = ob->getBestBid();
+    ASSERT_TRUE(bestBid.has_value());
+    EXPECT_EQ(bestBid->quantity, 5);
+}
