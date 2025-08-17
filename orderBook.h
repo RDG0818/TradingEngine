@@ -1,6 +1,6 @@
 #pragma once
 #include <map>
-#include <queue>
+#include <list>
 #include <algorithm>
 #include <mutex>
 #include <memory>
@@ -23,11 +23,12 @@ struct MarketData {
 class OrderBook {
     private:
         std::mutex mtx;
-        std::map<Price, std::deque<OrderID>> bids;
+        std::map<Price, std::list<OrderID>> bids;
         std::map<Price, Quantity> bid_quantities;
-        std::map<Price, std::deque<OrderID>> asks;
+        std::map<Price, std::list<OrderID>> asks;
         std::map<Price, Quantity> ask_quantities;
         std::unordered_map<OrderID, std::unique_ptr<Order>> allOrders;
+        std::unordered_map<OrderID, std::list<OrderID>::iterator> orderIterators;
         
     public:
         void addOrder(std::unique_ptr<LimitOrder> order);

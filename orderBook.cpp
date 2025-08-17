@@ -15,10 +15,12 @@ void OrderBook::addOrder(std::unique_ptr<LimitOrder> order) {
     switch (side) {
         case Side::BUY:
             bids[price].push_back(orderID);
+            orderIterators[orderID] = std::prev(bids[price].end());
             bid_quantities[price] += quantity;
             break;
         case Side::SELL:
             asks[price] .push_back(orderID);
+            orderIterators[orderID] = std::prev(asks[price].end());
             ask_quantities[price] += quantity;
             break;
     }
@@ -34,30 +36,37 @@ void OrderBook::removeOrder(OrderID orderID) {
         throw std::invalid_argument("Order to cancel does not exist.");
     };
     
-    Order* order = it->second.get();
 
+    auto iter_it = orderIterators.find(orderID);
+    if (iter_it == orderIterators.end()) {
+        throw std::logic_error("Order exists but iterator does not.");
+    }
+    
+    Order* order = it->second.get();
     auto limitOrder = static_cast<LimitOrder*>(order); 
     Price price = limitOrder->getPrice();
     Quantity quantity = limitOrder->getQuantity(); 
+    
     switch (order->getSide()) {
         case Side::BUY: {
-            std::deque<OrderID>& bidDeque = bids.at(price);
-            bidDeque.erase(std::remove(bidDeque.begin(), bidDeque.end(), orderID), bidDeque.end());
-            if (bidDeque.empty()) bids.erase(price);
+            std::list<OrderID>& bidList = bids.at(price);
+            bidList.erase(iter_it->second);
+            if (bidList.empty()) bids.erase(price);
             bid_quantities.at(price) -= quantity;
             if (bid_quantities.at(price) == 0) bid_quantities.erase(price);
             break;
         }
         case Side::SELL: {
-            std::deque<OrderID>& askDeque = asks.at(price);
-            askDeque.erase(std::remove(askDeque.begin(), askDeque.end(), orderID), askDeque.end());
-            if (askDeque.empty()) asks.erase(price);
+            std::list<OrderID>& askList = asks.at(price);
+            askList.erase(iter_it->second);
+            if (askList.empty()) asks.erase(price);
             ask_quantities.at(price) -= quantity;
             if (ask_quantities.at(price) == 0) ask_quantities.erase(price);
             break;
         }
     }
         
+    orderIterators.erase(iter_it);
     allOrders.erase(it);
 };
 
