@@ -7,6 +7,7 @@ class LimitOrder : public Order {
         Price price;
     public:
         LimitOrder(
+            str symbol,
             OrderID orderID,
             OrderType orderType,
             Side side,
@@ -28,5 +29,4 @@ class LimitOrder : public Order {
             this->price = price;
         }
         
-        bool isMarketOrder() const override;
 };

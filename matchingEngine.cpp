@@ -3,8 +3,44 @@
 MatchingEngine::MatchingEngine(OrderBook& orderBook, EventDispatcher& eventDispatcher)
     : book(orderBook), dispatcher(eventDispatcher), nextOrderID(1) {}
 
-void MatchingEngine::processOrder(std::unique_ptr<Order> order) {
+MatchingEngine::~MatchingEngine() {
+    stop();
+}
+
+void MatchingEngine::submitOrder(std::unique_ptr<Order> order) {
+    incoming_orders.push(std::move(order));
+}
+
+void MatchingEngine::start() {
+    running = true;
+    worker_thread = std::thread(&MatchingEngine::run_loop, this);
+}
+
+void MatchingEngine::stop() {
+    running = false;
+    incoming_orders.push(nullptr);
+    if (worker_thread.joinable()) {
+        worker_thread.join();
+    }
+}
+
+void MatchingEngine::run_loop() {
+    while (running) {
+        std::unique_ptr<Order> order = incoming_orders.pop();
+        
+        if (!order) {
+            continue;
+        }
+        
+        processOrderImpl(std::move(order));
+    }
+}
+
+void MatchingEngine::processOrderImpl(std::unique_ptr<Order> order) {
     order->setOrderID(nextOrderID++);
+    if (order->getQuantity() == 0) {
+        throw std::logic_error("Order cannot have 0 quantity.");
+    }
     matchOrder(order.get());    
     if (order->getQuantity() > 0) {
         if (order->getOrderType() == OrderType::LIMIT) {
@@ -64,7 +100,9 @@ void MatchingEngine::createTrade(Order* aggressor, Order* resting, Price tradePr
     Quantity restingRemaining = resting->getQuantity() - tradeQuantity;
     aggressor->setOrderStatus(aggressorRemaining > 0 ? OrderStatus::PARTIALLY_FILLED : OrderStatus::FILLED);
     resting->setOrderStatus(restingRemaining > 0 ? OrderStatus::PARTIALLY_FILLED : OrderStatus::FILLED);
-    dispatcher.publish(TradeExecutedEvent{aggressor->getOrderID(), resting->getOrderID(), tradePrice, tradeQuantity});
+    dispatcher.publish(TradeExecutedEvent{aggressor->getSymbol(), tradePrice, tradeQuantity, 
+        aggressor->getOrderID(), aggressor->getTraderID(), aggressor->getSide(), aggressor->getQuantity(), 
+        resting->getOrderID(), resting->getTraderID(), resting->getQuantity()});
 }
 
 

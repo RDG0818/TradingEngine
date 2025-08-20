@@ -7,6 +7,7 @@ class MarketOrder : public Order {
 
     public:
         MarketOrder(
+            str symbol,
             OrderID orderID,
             OrderType orderType,
             Side side,
@@ -14,6 +15,4 @@ class MarketOrder : public Order {
             TraderID traderID
         );
         
-        bool isMarketOrder() const override;
-
 };

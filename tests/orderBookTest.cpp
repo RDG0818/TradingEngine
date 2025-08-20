@@ -27,7 +27,7 @@ TEST_F(OrderBookTest, GetBestBidAndAsk_ReturnsNulloptOnEmptyBook) {
 
 // Test adding a single buy order and verifying the best bid
 TEST_F(OrderBookTest, AddSingleBuyOrder_CorrectlySetsBestBid) {
-    auto buyOrder = std::make_unique<LimitOrder>(1, OrderType::LIMIT, Side::BUY, "100.00", 10, 1);
+    auto buyOrder = std::make_unique<LimitOrder>("AAPL", 1, OrderType::LIMIT, Side::BUY, "100.00", 10, 1);
 
     ob->addOrder(std::move(buyOrder));
     
@@ -41,8 +41,8 @@ TEST_F(OrderBookTest, AddSingleBuyOrder_CorrectlySetsBestBid) {
 
 // Test that orders at the same price level have their quantities aggregated
 TEST_F(OrderBookTest, AddMultipleOrdersAtSamePrice_AggregatesQuantity) {
-    auto buyOrder1 = std::make_unique<LimitOrder>(1, OrderType::LIMIT, Side::BUY, "100.00", 10, 1);
-    auto buyOrder2 = std::make_unique<LimitOrder>(2, OrderType::LIMIT, Side::BUY, "100.00", 5, 2);
+    auto buyOrder1 = std::make_unique<LimitOrder>("AAPL", 1, OrderType::LIMIT, Side::BUY, "100.00", 10, 1);
+    auto buyOrder2 = std::make_unique<LimitOrder>("AAPL", 2, OrderType::LIMIT, Side::BUY, "100.00", 5, 2);
 
     ob->addOrder(std::move(buyOrder1));
     ob->addOrder(std::move(buyOrder2));
@@ -55,11 +55,11 @@ TEST_F(OrderBookTest, AddMultipleOrdersAtSamePrice_AggregatesQuantity) {
 
 // Test adding orders at different price levels to verify correct best bid/ask
 TEST_F(OrderBookTest, AddDifferentPriceOrders_CorrectlyIdentifiesBestBidAndAsk) {
-    auto buyOrder1 = std::make_unique<LimitOrder>(1, OrderType::LIMIT, Side::BUY, "100.00", 10, 1); // Lower bid
-    auto buyOrder2 = std::make_unique<LimitOrder>(2, OrderType::LIMIT, Side::BUY, "105.00", 5, 1); // Best bid
+    auto buyOrder1 = std::make_unique<LimitOrder>("AAPL", 1, OrderType::LIMIT, Side::BUY, "100.00", 10, 1); // Lower bid
+    auto buyOrder2 = std::make_unique<LimitOrder>("AAPL", 2, OrderType::LIMIT, Side::BUY, "105.00", 5, 1); // Best bid
     
-    auto sellOrder1 = std::make_unique<LimitOrder>(3, OrderType::LIMIT, Side::SELL, "110.00", 8, 2); // Higher ask
-    auto sellOrder2 = std::make_unique<LimitOrder>(4, OrderType::LIMIT, Side::SELL, "108.00", 12, 2); // Best ask
+    auto sellOrder1 = std::make_unique<LimitOrder>("AAPL", 3, OrderType::LIMIT, Side::SELL, "110.00", 8, 2); // Higher ask
+    auto sellOrder2 = std::make_unique<LimitOrder>("AAPL", 4, OrderType::LIMIT, Side::SELL, "108.00", 12, 2); // Best ask
 
     ob->addOrder(std::move(buyOrder1));
     ob->addOrder(std::move(buyOrder2));
@@ -80,8 +80,8 @@ TEST_F(OrderBookTest, AddDifferentPriceOrders_CorrectlyIdentifiesBestBidAndAsk) 
 
 // Test that adding an order with a duplicate ID throws an exception
 TEST_F(OrderBookTest, AddDuplicateOrderID_ThrowsException) {
-    auto firstOrder = std::make_unique<LimitOrder>(1, OrderType::LIMIT, Side::BUY, "100.00", 1, 1);
-    auto secondOrder = std::make_unique<LimitOrder>(1, OrderType::LIMIT, Side::SELL, "200.00", 2, 2); // Same ID
+    auto firstOrder = std::make_unique<LimitOrder>("AAPL", 1, OrderType::LIMIT, Side::BUY, "100.00", 1, 1);
+    auto secondOrder = std::make_unique<LimitOrder>("AAPL", 1, OrderType::LIMIT, Side::SELL, "200.00", 2, 2); // Same ID
 
     ob->addOrder(std::move(firstOrder));
 
@@ -95,8 +95,8 @@ TEST_F(OrderBookTest, RemoveNonExistentOrder_ThrowsException) {
 
 // Test removing an existing order and verifying the book is updated
 TEST_F(OrderBookTest, RemoveExistingOrder_UpdatesBookCorrectly) {
-    auto buyOrder1 = std::make_unique<LimitOrder>(1, OrderType::LIMIT, Side::BUY, "100.00", 10, 1);
-    auto buyOrder2 = std::make_unique<LimitOrder>(2, OrderType::LIMIT, Side::BUY, "105.00", 5, 1); // Best bid
+    auto buyOrder1 = std::make_unique<LimitOrder>("AAPL", 1, OrderType::LIMIT, Side::BUY, "100.00", 10, 1);
+    auto buyOrder2 = std::make_unique<LimitOrder>("AAPL", 2, OrderType::LIMIT, Side::BUY, "105.00", 5, 1); // Best bid
 
     ob->addOrder(std::move(buyOrder1));
     ob->addOrder(std::move(buyOrder2));
@@ -113,7 +113,7 @@ TEST_F(OrderBookTest, RemoveExistingOrder_UpdatesBookCorrectly) {
 }
 
 TEST_F(OrderBookTest, ReduceOrderQuantity_PartialFill) {
-    auto buyOrder = std::make_unique<LimitOrder>(1, OrderType::LIMIT, Side::BUY, "100.00", 15, 1);
+    auto buyOrder = std::make_unique<LimitOrder>("AAPL", 1, OrderType::LIMIT, Side::BUY, "100.00", 15, 1);
     ob->addOrder(std::move(buyOrder));
 
     // Reduce the order's quantity by 5 (a partial fill)
@@ -131,8 +131,8 @@ TEST_F(OrderBookTest, ReduceOrderQuantity_PartialFill) {
 }
 
 TEST_F(OrderBookTest, ReduceOrderQuantity_FullFill) {
-    auto buyOrder1 = std::make_unique<LimitOrder>(1, OrderType::LIMIT, Side::BUY, "100.00", 10, 1);
-    auto buyOrder2 = std::make_unique<LimitOrder>(2, OrderType::LIMIT, Side::BUY, "100.00", 5, 1);
+    auto buyOrder1 = std::make_unique<LimitOrder>("AAPL", 1, OrderType::LIMIT, Side::BUY, "100.00", 10, 1);
+    auto buyOrder2 = std::make_unique<LimitOrder>("AAPL", 2, OrderType::LIMIT, Side::BUY, "100.00", 5, 1);
     ob->addOrder(std::move(buyOrder1));
     ob->addOrder(std::move(buyOrder2));
 

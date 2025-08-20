@@ -28,6 +28,7 @@ enum class OrderStatus {
 
 class Order {
     private:
+        str symbol;
         OrderID orderID;
         OrderType orderType;
         OrderStatus orderStatus = OrderStatus::NEW;
@@ -37,7 +38,13 @@ class Order {
         Milliseconds timestamp = std::chrono::duration_cast<Milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch());
     public:
         virtual ~Order() {}
-            
+
+        const str& getSymbol() const {
+            return symbol;
+        }    
+        void setSymbol(str s) {
+            this->symbol = s;
+        }
         OrderID getOrderID() {
             return orderID;
         };
@@ -77,5 +84,4 @@ class Order {
         Milliseconds getTimestamp() {
             return timestamp;
         }
-        virtual bool isMarketOrder() const = 0;
        };
