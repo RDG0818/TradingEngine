@@ -22,6 +22,7 @@ class Portfolio:
         self.trader_id = trader_id 
         self.value = self.cash + sum(pos.market_value for pos in self.holdings.values())
         self.commissions = commissions
+        self.trade_count = 0
 
     def get_position(self, symbol: str) -> Position | None:
         return self.holdings.get(symbol)
@@ -45,6 +46,7 @@ class Portfolio:
             my_side = trading_core.Side.BUY if event.aggressing_side == trading_core.Side.SELL else trading_core.Side.SELL
         else:
             return
+        self.trade_count += 1
 
         fill_price = float(event.price) / 100
         fill_quantity = event.quantity

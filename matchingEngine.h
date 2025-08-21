@@ -12,13 +12,15 @@ class MatchingEngine {
     private:
         OrderBook& book;
         EventDispatcher& dispatcher;
-        OrderID nextOrderID;
+        std::atomic<OrderID> nextOrderID;
 
         std::thread worker_thread;
         std::atomic<bool> running{false};
+        ThreadSafeQueue<OrderID> incoming_cancellations;
         ThreadSafeQueue<std::unique_ptr<Order>> incoming_orders;
 
-        void processOrderImpl(std::unique_ptr<Order> order);
+        void processOrderSubmission(std::unique_ptr<Order> order);
+        void processOrderCancellation(OrderID orderID);
         void matchOrder(Order* incomingOrder);
         void placeRestingLimitOrder(std::unique_ptr<LimitOrder> order);
         void createTrade(Order* aggressor, Order* resting, Price tradePrice, Quantity tradeQuantity);
@@ -29,7 +31,9 @@ class MatchingEngine {
         MatchingEngine(OrderBook& orderBook, EventDispatcher& eventDispatcher);
         ~MatchingEngine();
         
-        void submitOrder(std::unique_ptr<Order> order);
+        OrderID submitOrder(std::unique_ptr<Order> order);
+        void cancelOrder(OrderID orderID);
+        
         void start();
         void stop();
 

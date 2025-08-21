@@ -38,7 +38,8 @@ PYBIND11_MODULE(trading_core, m) {
     
     py::class_<MatchingEngine>(m, "MatchingEngine")
         .def(py::init<OrderBook&, EventDispatcher&>())
-        .def("submit_order", &MatchingEngine::submitOrder)
+        .def("submit_order", &MatchingEngine::submitOrder, py::arg("order"))
+        .def("cancel_order", &MatchingEngine::cancelOrder, py::arg("order_id"))
         .def("start", &MatchingEngine::start, py::call_guard<py::gil_scoped_release>())
         .def("stop", &MatchingEngine::stop);
 
@@ -106,4 +107,4 @@ PYBIND11_MODULE(trading_core, m) {
         
     py::class_<OrderBook>(m, "OrderBook")
         .def(py::init<>());
-    }       
+    }

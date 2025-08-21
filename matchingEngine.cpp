@@ -7,8 +7,15 @@ MatchingEngine::~MatchingEngine() {
     stop();
 }
 
-void MatchingEngine::submitOrder(std::unique_ptr<Order> order) {
+OrderID MatchingEngine::submitOrder(std::unique_ptr<Order> order) {
+    OrderID id = nextOrderID.fetch_add(1);
+    order->setOrderID(id);
     incoming_orders.push(std::move(order));
+    return id;
+}
+
+void MatchingEngine::cancelOrder(OrderID orderID) {
+    incoming_cancellations.push(orderID);
 }
 
 void MatchingEngine::start() {
@@ -19,6 +26,7 @@ void MatchingEngine::start() {
 void MatchingEngine::stop() {
     running = false;
     incoming_orders.push(nullptr);
+    incoming_cancellations.push(0);
     if (worker_thread.joinable()) {
         worker_thread.join();
     }
@@ -28,20 +36,22 @@ void MatchingEngine::run_loop() {
     while (running) {
         std::unique_ptr<Order> order = incoming_orders.pop();
         
-        if (!order) {
-            continue;
-        }
+        if (order) processOrderSubmission(std::move(order));
         
-        processOrderImpl(std::move(order));
+        OrderID id_to_cancel = incoming_cancellations.pop();
+        if (id_to_cancel != 0) {
+            processOrderCancellation(id_to_cancel);
+        }
     }
 }
 
-void MatchingEngine::processOrderImpl(std::unique_ptr<Order> order) {
-    order->setOrderID(nextOrderID++);
+void MatchingEngine::processOrderSubmission(std::unique_ptr<Order> order) {
     if (order->getQuantity() == 0) {
-        throw std::logic_error("Order cannot have 0 quantity.");
+        return;
     }
+
     matchOrder(order.get());    
+
     if (order->getQuantity() > 0) {
         if (order->getOrderType() == OrderType::LIMIT) {
            placeRestingLimitOrder(std::unique_ptr<LimitOrder>(static_cast<LimitOrder*>(order.release()))); 
@@ -50,6 +60,15 @@ void MatchingEngine::processOrderImpl(std::unique_ptr<Order> order) {
             order->setOrderStatus(OrderStatus::CANCELLED);
             dispatcher.publish(OrderCancelledEvent{order->getOrderID(), order->getQuantity()});
         }
+    }
+}
+
+void MatchingEngine::processOrderCancellation(OrderID orderID) {
+    try {
+        book.cancelOrder(orderID);
+    }
+    catch (const std::invalid_argument& e) {
+        // TODO: add some logic here
     }
 }
 

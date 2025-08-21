@@ -1,59 +1,48 @@
 import trading_core
 import time
 from portfolio import Portfolio
+from data_handler import CSVDataHandler, data_file_path
+from strategy import MovingAverageCrossoverStrategy
 
 trader_ids = set() 
 
-class CSVDataHandler:
-    """A placeholder for your data handler that reads from a CSV."""
-    def __init__(self, csv_filepath: str):
-        # In the real version, you'll load the CSV here (e.g., with pandas)
-        print(f"Data handler initialized for {csv_filepath}")
-        self._data = [{'timestamp': '2025-08-18 10:00:00', 'close': 150.00},
-                      {'timestamp': '2025-08-18 10:01:00', 'close': 150.50},
-                      {'timestamp': '2025-08-18 10:02:00', 'close': 151.00}] # Dummy data
-        self._data_stream = iter(self._data)
-
-    def stream_bars(self):
-        """A generator that yields one data bar at a time."""
-        return self._data_stream
-
-class MarketMakerStrategy:
-    """
-    A strategy that simulates a realistic trade by having two different
-    traders interact. Our portfolio will be Trader 1.
-    """
-    def __init__(self, engine, my_trader_id: int):
+class MarketSimulator:
+    def __init__(self, engine, symbol: str):
         self.engine = engine
-        self.my_trader_id = my_trader_id
-        # Define a separate ID for the other trader
-        self.opponent_trader_id = my_trader_id + 1 
-        self.orders_sent = 0
+        self.symbol = symbol
+        self.resting_bid_id = None
+        self.resting_ask_id = None
+        self.bid_trader_id = 998
+        self.ask_trader_id = 999
+        
+    def create_market_for_bar(self, bar):
+        bid_price_str = f"{bar['low']:.2f}"
+        ask_price_str = f"{bar['high']:.2f}"
+        
+        print(f"SIM: Creating market -> BID @ {bid_price_str}, ASK @ {ask_price_str}")
+        
+        bid_order = trading_core.LimitOrder(
+            self.symbol, 0, trading_core.OrderType.LIMIT, trading_core.Side.BUY,
+            bid_price_str, 1000, self.bid_trader_id
+        )
+        self.resting_bid_id = self.engine.submit_order(bid_order)
 
-    def on_bar(self, bar):
-        """Called for each new market data bar."""
-        price_str = f"{bar['close']:.2f}"
+        ask_order = trading_core.LimitOrder(
+            self.symbol, 0, trading_core.OrderType.LIMIT, trading_core.Side.SELL,
+            ask_price_str, 1000, self.ask_trader_id
+        )
+        self.resting_ask_id = self.engine.submit_order(ask_order)
         
-        # On the first bar, have the OPPONENT submit a SELL order.
-        # This order will rest on the book, waiting for us.
-        if self.orders_sent == 0:
-            print("  -> Opponent is submitting a resting SELL order.")
-            sell_order = trading_core.LimitOrder(
-                "AAPL", 0, trading_core.OrderType.LIMIT, trading_core.Side.SELL,
-                price_str, 10, self.opponent_trader_id # Use opponent's ID
-            )
-            self.engine.submit_order(sell_order)
-            self.orders_sent += 1
-        
-        # On the second bar, OUR STRATEGY submits a crossing BUY order.
-        elif self.orders_sent == 1:
-            print(f"  -> Our strategy (Trader {self.my_trader_id}) is submitting a BUY order.")
-            buy_order = trading_core.LimitOrder(
-                "AAPL", 0, trading_core.OrderType.LIMIT, trading_core.Side.BUY,
-                price_str, 10, self.my_trader_id # Use our ID
-            )
-            self.engine.submit_order(buy_order)
-            self.orders_sent += 1
+    def cleanup_market(self):
+        if self.resting_bid_id is not None:
+           print(f"SIM: Cleaning up previous BID (ID: {self.resting_bid_id})") 
+           self.engine.cancel_order(self.resting_bid_id)
+           self.resting_bid_id = None
+
+        if self.resting_ask_id is not None:
+            print(f"SIM: Cleaning up previous ASK (ID: {self.resting_ask_id})")
+            self.engine.cancel_order(self.resting_ask_id)
+            self.resting_ask_id = None 
 
 if __name__ == "__main__":
     print("Starting Trading System Backtest")
@@ -63,31 +52,41 @@ if __name__ == "__main__":
     engine = trading_core.MatchingEngine(orderbook, dispatcher)
 
     portfolio = Portfolio(cash="10000.00", trader_id=1)
-    data_handler = CSVDataHandler(csv_filepath="./data/AAPL.csv")
-    strategy = MarketMakerStrategy(engine=engine, my_trader_id=1)
+    data_handler = CSVDataHandler(csv_path=data_file_path, symbol="AAPL")
+
+    market_sim = MarketSimulator(engine=engine, symbol="AAPL")
+    strategy = MovingAverageCrossoverStrategy(engine, portfolio, "AAPL", 5, 50)
 
     dispatcher.subscribe_trade_executed(portfolio.on_fill)
     dispatcher.subscribe_market_data(portfolio.on_market_data)
 
     engine.start()
 
-    for bar in data_handler.stream_bars():
-        print(f"\nProcessing {bar['timestamp']} | Portfolio Value: {portfolio.value:.2f}")
+    for bar_data in data_handler.stream_bars():
+        timestamp, bar = bar_data
+        print(f"\nProcessing {timestamp} | Portfolio Value: ${portfolio.value:.2f}")
+        
+        market_sim.cleanup_market()
+        market_sim.create_market_for_bar(bar)
+
+        strategy.on_bar(bar)
         
         market_event = trading_core.MarketDataEvent()
         market_event.symbol = "AAPL" 
         market_event.last_price = int(bar['close'] * 100)
         portfolio.on_market_data(market_event)
 
-        strategy.on_bar(bar)
-        time.sleep(0.01)
+        time.sleep(0.002)
 
     print("\n--- Backtest Complete ---")
     
+    market_sim.cleanup_market()
+    time.sleep(0.002)
     engine.stop()
 
     final_value = portfolio.value
     pnl = final_value - 10000.0
     print(f"Final Portfolio Value: ${final_value:,.2f}")
     print(f"Total Profit/Loss: ${pnl:,.2f}")
-    print(f"Total Trades Executed: {len(portfolio.holdings)}")
+    print(f"Total Trades Executed: {portfolio.trade_count}")
+    print(f"Final Holdings: {portfolio.holdings}")
