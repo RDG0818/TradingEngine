@@ -64,6 +64,7 @@ if __name__ == "__main__":
 
     for bar_data in data_handler.stream_bars():
         timestamp, bar = bar_data
+        portfolio.current_bar_timestamp = timestamp
         print(f"\nProcessing {timestamp} | Portfolio Value: ${portfolio.value:.2f}")
         
         market_sim.cleanup_market()
@@ -75,6 +76,7 @@ if __name__ == "__main__":
         market_event.symbol = "AAPL" 
         market_event.last_price = int(bar['close'] * 100)
         portfolio.on_market_data(market_event)
+        portfolio.log_state(timestamp)
 
         time.sleep(0.002)
 
@@ -90,3 +92,4 @@ if __name__ == "__main__":
     print(f"Total Profit/Loss: ${pnl:,.2f}")
     print(f"Total Trades Executed: {portfolio.trade_count}")
     print(f"Final Holdings: {portfolio.holdings}")
+    portfolio.save_results()

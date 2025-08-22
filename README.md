@@ -63,6 +63,7 @@ The script will:
 3. Run the strategy defined in `strategy.py` against the historical data
 4. Print the final portfolio performance to the console
 
+![MA Crossover Strategy](images/graph1.png "MA Crossover Strategy")
 
 ## Future Work
 
@@ -71,6 +72,8 @@ The script will:
 - Integration with a visualization library for plotting equity curves and performance metrics
 - Support for options and other derivatives
 - Support for live paper trading on crypto
+- Optimizations for faster high frequency trading
+- examples of portfolio optimization and advanced trading strategies
 
 ## License
 This project is licensed under the MIT License - see the `License.md` file for details.

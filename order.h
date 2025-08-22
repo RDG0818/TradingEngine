@@ -35,8 +35,9 @@ class Order {
         Side side;
         Quantity quantity;
         TraderID traderID;
-        Milliseconds timestamp = std::chrono::duration_cast<Milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch());
+        Timestamp timestamp = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());  
     public:
+
         virtual ~Order() {}
 
         const str& getSymbol() const {
@@ -81,7 +82,7 @@ class Order {
         void setTraderID(TraderID t) {
             this->traderID = t;
         }
-        Milliseconds getTimestamp() {
+        Timestamp getTimestamp() {
             return timestamp;
         }
        };

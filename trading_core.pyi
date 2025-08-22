@@ -1,6 +1,6 @@
 import collections.abc
+import datetime
 import typing
-from _typeshed import Incomplete
 from typing import ClassVar
 
 BUY: Side
@@ -27,7 +27,7 @@ class LimitOrder(Order):
 class MarketDataEvent:
     last_price: int
     symbol: str
-    timestamp: int
+    timestamp: datetime.datetime
     def __init__(self) -> None: ...
 
 class MarketOrder(Order):
@@ -101,5 +101,5 @@ class TradeExecutedEvent:
     resting_remaining_quantity: int
     resting_trader_id: int
     symbol: str
-    timestamp: Incomplete
+    timestamp: datetime.datetime
     def __init__(self) -> None: ...

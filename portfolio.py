@@ -1,5 +1,7 @@
 import trading_core
 from dataclasses import dataclass
+import pandas as pd
+from typing import Optional, Hashable
 
 def validate_price(price: str):
     if '.' in price:
@@ -23,6 +25,9 @@ class Portfolio:
         self.value = self.cash + sum(pos.market_value for pos in self.holdings.values())
         self.commissions = commissions
         self.trade_count = 0
+        self.current_bar_timestamp: Optional[Hashable] = None
+        self.history = []
+        self.trades = []
 
     def get_position(self, symbol: str) -> Position | None:
         return self.holdings.get(symbol)
@@ -53,8 +58,16 @@ class Portfolio:
         symbol = event.symbol
         fill_direction = "BUY" if my_side == trading_core.Side.BUY else "SELL"
         
-        print(f"Portfolio {self.trader_id} processing fill: {fill_direction} {fill_quantity} {symbol} @ {fill_price}")
+        self.trades.append({
+            'timestamp': self.current_bar_timestamp,
+            'symbol': symbol,
+            'side': fill_direction,
+            'price': fill_price,
+            'quantity': fill_quantity
+        })
         
+        print(f"Portfolio {self.trader_id} processing fill: {fill_direction} {fill_quantity} {symbol} @ {fill_price}")
+
         signed_quantity = fill_quantity if fill_direction == "BUY" else -fill_quantity
         transaction_cost = signed_quantity * fill_price
         self.cash -= transaction_cost
@@ -90,3 +103,13 @@ class Portfolio:
             new_market_value = position.quantity * event.last_price / 100.0
             position.market_value = new_market_value
             self.value += new_market_value - old_market_value
+            
+    def log_state(self, timestamp):
+        self.history.append({
+            'timestamp': timestamp,
+            'value': self.value
+        })
+
+    def save_results(self, history_filepath="csv/backtest_history.csv", trades_filepath="csv/backtest_trades.csv"):
+        pd.DataFrame(self.history).to_csv(history_filepath, index=False)
+        pd.DataFrame(self.trades).to_csv(trades_filepath, index=False)

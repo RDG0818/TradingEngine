@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 script_dir = Path(__file__).parent
-data_file_path = script_dir / "data.csv"
+data_file_path = script_dir / "csv/data.csv"
 
 if not data_file_path.is_file():
     print(f"Data file not found at {data_file_path}, downloading...")

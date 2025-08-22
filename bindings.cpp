@@ -1,5 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/functional.h>
+#include <pybind11/chrono.h>
 
 #include "eventDispatcher.h"
 #include "events.h"

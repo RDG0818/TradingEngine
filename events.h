@@ -18,7 +18,7 @@ struct TradeExecutedEvent {
     TraderID restingTraderID;
     Quantity restingRemainingQuantity;
     
-    Milliseconds timestamp = std::chrono::duration_cast<Milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch());
+    Timestamp timestamp = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
 };
 
 struct OrderAcceptedEvent {
@@ -35,5 +35,5 @@ struct OrderCancelledEvent {
 struct MarketDataEvent {
     std::string symbol;
     Price last_price; 
-    uint64_t timestamp;
+    Timestamp timestamp = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
 };
