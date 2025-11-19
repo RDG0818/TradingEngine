@@ -28,7 +28,7 @@ public:
     }
 
    template<typename TEvent>
-    void publish(const TEvent& event) {
+    void publish(const TEvent& event) { // TODO: Make asynchronous
         auto typeIndex = std::type_index(typeid(TEvent));
         std::vector<std::function<void(const std::any&)>> callbacks;
 

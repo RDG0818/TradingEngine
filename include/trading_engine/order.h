@@ -15,16 +15,18 @@ private:
     OrderType orderType;
     OrderStatus orderStatus = OrderStatus::NEW;
     Side side;
+    TimeInForce tif;
 
 public:
-    Order(SymbolID symbolID, OrderID orderID, OrderType orderType, Side side, Quantity quantity, TraderID traderID)
+    Order(SymbolID symbolID, OrderID orderID, OrderType orderType, Side side, Quantity quantity, TraderID traderID, TimeInForce tif = TimeInForce::GTC)
         : timestamp(std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now())),
           orderID(orderID),
           symbolID(symbolID),
           quantity(quantity),
           traderID(traderID),
           orderType(orderType),
-          side(side) {
+          side(side),
+          tif(tif) {
     }
 
     virtual ~Order() = default;
@@ -32,7 +34,7 @@ public:
     SymbolID getSymbolID() const {
         return symbolID;
     }
-    virtual Price getPrice() const = 0;
+    virtual Price getPrice() const { return 0; }
     OrderID getOrderID() const {
         return orderID;
     }
@@ -53,6 +55,9 @@ public:
     }
     Timestamp getTimestamp() const {
         return timestamp;
+    }
+    TimeInForce getTimeInForce() const {
+        return tif;
     }
 
     void setOrderStatus(OrderStatus status) {

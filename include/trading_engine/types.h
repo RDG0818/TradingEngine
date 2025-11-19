@@ -17,7 +17,9 @@ constexpr Side getOppositeSide(Side side) {
 
 enum class OrderType : std::uint8_t {
     LIMIT,
-    MARKET
+    MARKET,
+    STOP_MARKET,
+    STOP_LIMIT
 };
 
 enum class OrderStatus : std::uint8_t {
@@ -27,4 +29,10 @@ enum class OrderStatus : std::uint8_t {
     PARTIALLY_FILLED,
     FILLED,
     CANCELLED
+};
+
+enum class TimeInForce : std::uint8_t {
+    GTC,
+    IOC,
+    FOK
 };

@@ -3,12 +3,15 @@
 #include <list>
 #include <algorithm>
 #include <mutex>
+#include <shared_mutex>
 #include <memory>
 #include <optional>
 #include <functional>
 #include "order.h"
 #include "limitOrder.h"
 #include "types.h"
+
+// TODO: Utilize lockless data structures here
 
 struct MarketData {
     Price price;
@@ -22,19 +25,23 @@ private:
         std::list<OrderID> orders;
     };
 
-    std::mutex mtx;
+    mutable std::shared_mutex bids_mtx;
+    mutable std::shared_mutex asks_mtx;
+    mutable std::mutex orders_mtx;
+
     std::map<Price, PriceLevel, std::greater<Price>> bids; // Sorted high to low
     std::map<Price, PriceLevel> asks;                      // Sorted low to high
     std::unordered_map<OrderID, std::unique_ptr<Order>> allOrders;
     std::unordered_map<OrderID, std::list<OrderID>::iterator> orderIterators;
 
-    void removeOrder(OrderID orderID);
 
 public:
 
     void addOrder(std::unique_ptr<LimitOrder> order);
 
     void cancelOrder(OrderID orderID);
+    
+    void removeOrder(OrderID orderID);
 
     Order* getOrder(OrderID orderID);
 

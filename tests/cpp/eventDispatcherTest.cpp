@@ -98,6 +98,11 @@ TEST_F(EventDispatcherTest, MultithreadedStressTest) {
     std::atomic<int> eventCount = 0;
     const int num_events = 1000;
 
+    // A subscriber that is present from the start
+    dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
+        eventCount++;
+    });
+
     // Publisher thread: Rapidly publishes events.
     std::thread publisher([&]() {
         for (int i = 0; i < num_events; ++i) {

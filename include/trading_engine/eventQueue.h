@@ -2,8 +2,12 @@
 #include <queue>
 #include <mutex>
 #include <condition_variable>
+#include <variant>
+#include "trading_engine/order.h"
+#include "trading_engine/types.h"
+#include <memory>
 
-// TODO: Utilize the boost libraries lockless queue here
+using EngineEvent = std::variant<std::unique_ptr<Order>, OrderID>;
 
 template<typename T>
 class ThreadSafeQueue {
@@ -16,31 +20,19 @@ public:
     void push(T value) {
         std::lock_guard<std::mutex> lock(mtx);
         queue.push(std::move(value));
-        cv.notify_one(); // Notify one waiting thread that an item is available
+        cv.notify_one();
     }
 
-    // This pop will block until an item is available
     T pop() {
         std::unique_lock<std::mutex> lock(mtx);
-        // Wait until the queue is not empty
         cv.wait(lock, [this]{ return !queue.empty(); });
         T value = std::move(queue.front());
         queue.pop();
         return value;
     }
 
-    bool try_pop(T& value) {
+    bool empty() {
         std::lock_guard<std::mutex> lock(mtx);
-        if (queue.empty()) {
-            return false;
-        }
-        value = std::move(queue.front());
-        queue.pop();
-        return true;
-    }
-
-    void wait() {
-        std::unique_lock<std::mutex> lock(mtx);
-        cv.wait(lock, [this]{ return !queue.empty(); });
+        return queue.empty();
     }
 };

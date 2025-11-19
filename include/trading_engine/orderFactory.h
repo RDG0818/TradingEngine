@@ -3,6 +3,8 @@
 #include "order.h"
 #include "limitOrder.h"
 #include "marketOrder.h"
+#include "stopMarketOrder.h"
+#include "stopLimitOrder.h"
 #include "symbolRegistry.h"
 #include <string>
 #include <memory>
@@ -14,8 +16,10 @@ struct RawOrderParams {
     OrderType orderType;
     Side side;
     std::string price;
+    std::string stopPrice;
     Quantity quantity;
     TraderID traderID;
+    TimeInForce timeInForce = TimeInForce::GTC;
 };
 
 class OrderFactory {
@@ -24,11 +28,19 @@ public:
         SymbolID symbolID = SymbolRegistry::getInstance().getID(params.symbol);
 
         Price priceInt = 0;
-        if (params.orderType == OrderType::LIMIT) {
+        if (params.orderType == OrderType::LIMIT || params.orderType == OrderType::STOP_LIMIT) {
             if (!isValidPrice(params.price)) {
                 throw std::invalid_argument("Invalid price format: " + params.price);
             }
             priceInt = convertPriceToInt(params.price);
+        }
+
+        Price stopPriceInt = 0;
+        if (params.orderType == OrderType::STOP_MARKET || params.orderType == OrderType::STOP_LIMIT) {
+            if (!isValidPrice(params.stopPrice)) {
+                throw std::invalid_argument("Invalid stop price format: " + params.stopPrice);
+            }
+            stopPriceInt = convertPriceToInt(params.stopPrice);
         }
 
         if (params.quantity == 0) {
@@ -37,14 +49,17 @@ public:
 
         switch (params.orderType) {
             case OrderType::LIMIT:
-                return std::make_unique<LimitOrder>(symbolID, orderID, params.side, priceInt, params.quantity, params.traderID);
+                return std::make_unique<LimitOrder>(symbolID, orderID, params.side, priceInt, params.quantity, params.traderID, params.timeInForce);
             case OrderType::MARKET:
                 return std::make_unique<MarketOrder>(symbolID, orderID, params.side, params.quantity, params.traderID);
+            case OrderType::STOP_MARKET:
+                return std::make_unique<StopMarketOrder>(symbolID, orderID, params.side, params.quantity, params.traderID, stopPriceInt);
+            case OrderType::STOP_LIMIT:
+                return std::make_unique<StopLimitOrder>(symbolID, orderID, params.side, params.quantity, params.traderID, stopPriceInt, priceInt, params.timeInForce);
             default:
                 throw std::invalid_argument("Unsupported order type.");
         }
     }
-
 private:
     static bool isValidPrice(const std::string& priceStr) {
         if (priceStr.empty() || priceStr.find('-') != std::string::npos) return false;
