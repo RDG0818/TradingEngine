@@ -12,14 +12,24 @@ MatchingEngine::~MatchingEngine() {
 OrderID MatchingEngine::submitOrder(const RawOrderParams& params) {
     OrderID id = nextOrderID.fetch_add(1);
     
-    SymbolID symbolID = SymbolRegistry::getInstance().getID(params.symbol);
-    {
-        std::lock_guard<std::mutex> lock(order_map_mutex_);
-        orderID_to_symbol_[id] = symbolID;
-    }
+    try {
+        SymbolID symbolID = SymbolRegistry::getInstance().getID(params.symbol);
+        {
+            std::lock_guard<std::mutex> lock(order_map_mutex_);
+            orderID_to_symbol_[id] = symbolID;
+        }
 
-    auto order = OrderFactory::createOrder(params, id);
-    event_queue.push(std::move(order));
+        auto order = OrderFactory::createOrder(params, id);
+        event_queue.push(std::move(order));
+    } catch (const InvalidPriceException& e) {
+        dispatcher.publish(OrderRejectedEvent{id, params.traderID, RejectionReason::INVALID_PRICE, e.what()});
+    } catch (const InvalidQuantityException& e) {
+        dispatcher.publish(OrderRejectedEvent{id, params.traderID, RejectionReason::INVALID_QUANTITY, e.what()});
+    } catch (const UnsupportedOrderTypeException& e) {
+        dispatcher.publish(OrderRejectedEvent{id, params.traderID, RejectionReason::UNSUPPORTED_ORDER_TYPE, e.what()});
+    } catch (const std::invalid_argument& e) {
+        dispatcher.publish(OrderRejectedEvent{id, params.traderID, RejectionReason::OTHER, e.what()});
+    }
     return id;
 }
 
@@ -75,6 +85,7 @@ void MatchingEngine::run_loop() {
 
 void MatchingEngine::processOrderSubmission(std::unique_ptr<Order> order) {
     if (order->getQuantity() == 0) {
+        dispatcher.publish(OrderRejectedEvent{order->getOrderID(), order->getTraderID(), RejectionReason::INVALID_QUANTITY, "Quantity must be positive."});
         return;
     }
 
@@ -92,12 +103,12 @@ void MatchingEngine::processOrderSubmission(std::unique_ptr<Order> order) {
     if (order->getQuantity() > 0) {
         if (order->getTimeInForce() == TimeInForce::IOC || order->getTimeInForce() == TimeInForce::FOK) {
             order->setOrderStatus(OrderStatus::CANCELLED);
-            dispatcher.publish(OrderCancelledEvent{order->getOrderID(), order->getQuantity()});
+            dispatcher.publish(OrderCancelledEvent{order->getSymbolID(), order->getOrderID(), order->getTraderID(), order->getQuantity()});
         } else if (order->getOrderType() == OrderType::LIMIT) {
            placeRestingLimitOrder(std::unique_ptr<LimitOrder>(static_cast<LimitOrder*>(order.release())), *book); 
         } else {
             order->setOrderStatus(OrderStatus::CANCELLED);
-            dispatcher.publish(OrderCancelledEvent{order->getOrderID(), order->getQuantity()});
+            dispatcher.publish(OrderCancelledEvent{order->getSymbolID(), order->getOrderID(), order->getTraderID(), order->getQuantity()});
         }
     }
 }
@@ -122,6 +133,8 @@ void MatchingEngine::processStopLimitOrder(std::unique_ptr<StopLimitOrder> order
 
 void MatchingEngine::processOrderCancellation(OrderID orderID) {
     SymbolID symbolID;
+    TraderID traderID;
+    Quantity quantity;
     {
         std::lock_guard<std::mutex> lock(order_map_mutex_);
         auto it = orderID_to_symbol_.find(orderID);
@@ -133,12 +146,18 @@ void MatchingEngine::processOrderCancellation(OrderID orderID) {
 
     OrderBook* book = getBook(symbolID);
     if (book) {
-        try {
-            book->cancelOrder(orderID);
-            std::lock_guard<std::mutex> lock(order_map_mutex_);
-            orderID_to_symbol_.erase(orderID);
-        } catch (const std::invalid_argument& e) {
-            // TODO: add logging
+        Order* order = book->getOrder(orderID);
+        if (order) {
+            traderID = order->getTraderID();
+            quantity = order->getQuantity();
+            try {
+                book->cancelOrder(orderID);
+                dispatcher.publish(OrderCancelledEvent{symbolID, orderID, traderID, quantity});
+                std::lock_guard<std::mutex> lock(order_map_mutex_);
+                orderID_to_symbol_.erase(orderID);
+            } catch (const std::invalid_argument& e) {
+                // TODO: add logging
+            }
         }
     }
 }
@@ -201,6 +220,7 @@ void MatchingEngine::matchOrder(Order* incomingOrder, OrderBook& book) {
 
 void MatchingEngine::placeRestingLimitOrder(std::unique_ptr<LimitOrder> order, OrderBook& book) {
     order->setOrderStatus(OrderStatus::ACCEPTED);
+    dispatcher.publish(OrderAcceptedEvent{order->getSymbolID(), order->getOrderID(), order->getTraderID(), order->getSide(), order->getPrice(), order->getQuantity()});
     book.addOrder(std::move(order));
 }
 

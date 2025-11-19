@@ -6,10 +6,13 @@
 #include "stopMarketOrder.h"
 #include "stopLimitOrder.h"
 #include "symbolRegistry.h"
+#include "events.h"
+#include "exceptions.h"
 #include <string>
 #include <memory>
 #include <stdexcept>
 #include <algorithm>
+#include <functional>
 
 struct RawOrderParams {
     std::string symbol;
@@ -30,7 +33,7 @@ public:
         Price priceInt = 0;
         if (params.orderType == OrderType::LIMIT || params.orderType == OrderType::STOP_LIMIT) {
             if (!isValidPrice(params.price)) {
-                throw std::invalid_argument("Invalid price format: " + params.price);
+                throw InvalidPriceException("Invalid price format: " + params.price);
             }
             priceInt = convertPriceToInt(params.price);
         }
@@ -38,13 +41,13 @@ public:
         Price stopPriceInt = 0;
         if (params.orderType == OrderType::STOP_MARKET || params.orderType == OrderType::STOP_LIMIT) {
             if (!isValidPrice(params.stopPrice)) {
-                throw std::invalid_argument("Invalid stop price format: " + params.stopPrice);
+                throw InvalidPriceException("Invalid stop price format: " + params.stopPrice);
             }
             stopPriceInt = convertPriceToInt(params.stopPrice);
         }
 
         if (params.quantity == 0) {
-            throw std::invalid_argument("Quantity must be positive.");
+            throw InvalidQuantityException("Quantity must be positive.");
         }
 
         switch (params.orderType) {
@@ -57,16 +60,16 @@ public:
             case OrderType::STOP_LIMIT:
                 return std::make_unique<StopLimitOrder>(symbolID, orderID, params.side, params.quantity, params.traderID, stopPriceInt, priceInt, params.timeInForce);
             default:
-                throw std::invalid_argument("Unsupported order type.");
+                throw UnsupportedOrderTypeException("Unsupported order type.");
         }
     }
+
 private:
     static bool isValidPrice(const std::string& priceStr) {
         if (priceStr.empty() || priceStr.find('-') != std::string::npos) return false;
         
         auto dot_pos = priceStr.find('.');
         if (dot_pos != std::string::npos && priceStr.length() - dot_pos - 1 > 4) {
-            // More than 4 decimal places is invalid
             return false;
         }
 
@@ -89,7 +92,7 @@ private:
         std::string frac_str = priceStr.substr(dot_pos + 1);
 
         if (frac_str.length() > 4) {
-            frac_str = frac_str.substr(0, 4); // Truncate to 4 decimal places
+            frac_str = frac_str.substr(0, 4);
         }
         frac_str.resize(4, '0');
         

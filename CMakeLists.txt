@@ -13,9 +13,12 @@ set(PROJECT_SRC_DIR ${PROJECT_SOURCE_DIR}/src)
 include_directories(
     ${PROJECT_INCLUDE_DIR}
     ${PROJECT_SRC_DIR}/core
+    ${Boost_INCLUDE_DIRS}
 )
 
 file(GLOB_RECURSE CORE_SOURCES ${PROJECT_SRC_DIR}/core/*.cpp)
+
+find_package(Boost REQUIRED)
 
 # Google Test
 add_subdirectory(googletest)
@@ -27,5 +30,5 @@ add_executable(my_tests
     ${CORE_SOURCES}
 )
 
-target_link_libraries(my_tests GTest::gtest_main)
+target_link_libraries(my_tests GTest::gtest_main Boost::boost)
 target_include_directories(my_tests PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
