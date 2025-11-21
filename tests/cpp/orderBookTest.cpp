@@ -83,14 +83,14 @@ TEST_F(OrderBookTest, RemoveExistingOrderShouldUpdateBook) {
     orderBook->addOrder(std::make_unique<LimitOrder>(aapl_id, 1, Side::BUY, 10000, 10, 1));
     orderBook->addOrder(std::make_unique<LimitOrder>(aapl_id, 2, Side::BUY, 10500, 5, 1));
 
-    orderBook->removeOrder(2);
+    orderBook->cancelOrder(2);
 
     auto bestBid = orderBook->getBestBid();
     ASSERT_TRUE(bestBid.has_value());
     EXPECT_EQ(bestBid->price, 10000);
     EXPECT_EQ(bestBid->quantity, 10);
     
-    orderBook->removeOrder(1);
+    orderBook->cancelOrder(1);
     EXPECT_FALSE(orderBook->getBestBid().has_value());
 }
 
@@ -152,11 +152,11 @@ TEST_F(OrderBookTest, IsSideEmptyShouldReturnCorrectStatus) {
     EXPECT_FALSE(orderBook->isSideEmpty(Side::BUY));
     EXPECT_FALSE(orderBook->isSideEmpty(Side::SELL));
 
-    orderBook->removeOrder(1);
+    orderBook->cancelOrder(1);
     EXPECT_TRUE(orderBook->isSideEmpty(Side::BUY));
     EXPECT_FALSE(orderBook->isSideEmpty(Side::SELL));
 
-    orderBook->removeOrder(2);
+    orderBook->cancelOrder(2);
     EXPECT_TRUE(orderBook->isSideEmpty(Side::BUY));
     EXPECT_TRUE(orderBook->isSideEmpty(Side::SELL));
 }

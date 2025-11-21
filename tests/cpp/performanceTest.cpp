@@ -1,4 +1,4 @@
-#include "gtest/gtest.h"
+#include "benchmark/benchmark.h"
 #include "trading_engine/matchingEngine.h"
 #include "trading_engine/orderBook.h"
 #include "trading_engine/eventDispatcher.h"
@@ -9,135 +9,123 @@
 #include <vector>
 #include <thread>
 #include <chrono>
-#include <atomic>
 #include <numeric>
 #include <algorithm>
 #include <cmath>
+#include <mutex>
+#include <condition_variable>
+#include <string>
 
-class PerformanceTest : public ::testing::Test {
-protected:
+// Setup for benchmarks
+class BenchmarkFixture : public benchmark::Fixture {
+public:
     EventDispatcher dispatcher;
     MatchingEngine engine;
 
-    PerformanceTest() : engine(dispatcher) {}
+    BenchmarkFixture() : engine(dispatcher) {}
 
-    void SetUp() override {
+    void SetUp(const ::benchmark::State& state) override {
         engine.start();
     }
 
-    void TearDown() override {
+    void TearDown(const ::benchmark::State& state) override {
         engine.stop();
     }
 };
 
-class LatencyListener {
-public:
-    std::vector<std::chrono::high_resolution_clock::time_point> trade_timestamps;
-    std::mutex mtx;
+BENCHMARK_F(BenchmarkFixture, BM_OrderLatency)(benchmark::State& state) {
+    std::mutex m;
     std::condition_variable cv;
+    bool trade_executed = false;
 
-    void subscribe(EventDispatcher& dispatcher) {
-        dispatcher.subscribe<TradeExecutedEvent>([this](const TradeExecutedEvent& event) {
-            std::lock_guard<std::mutex> lock(mtx);
-            trade_timestamps.push_back(std::chrono::high_resolution_clock::now());
-            cv.notify_one();
-        });
-    }
-
-    void waitForTrades(size_t count) {
-        std::unique_lock<std::mutex> lock(mtx);
-        if (!cv.wait_for(lock, std::chrono::seconds(5), [&]{ return trade_timestamps.size() >= count; })) {
-            FAIL() << "Timeout waiting for trades. Expected " << count << ", but got " << trade_timestamps.size();
-        }
-    }
-};
-
-TEST_F(PerformanceTest, LatencyBenchmark) {
-    LatencyListener listener;
-    listener.subscribe(dispatcher);
-
-    const int NUM_ORDERS_TO_TEST = 10000;
-    std::vector<long long> latencies_nanos;
-    latencies_nanos.reserve(NUM_ORDERS_TO_TEST);
-
-    engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = (Quantity)NUM_ORDERS_TO_TEST, .traderID = 999});
-    
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    for (int i = 0; i < NUM_ORDERS_TO_TEST; ++i) {
-        auto start_time = std::chrono::high_resolution_clock::now();
-        engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 1, .traderID = 1});
-        
-        listener.waitForTrades(i + 1);
-        auto end_time = listener.trade_timestamps[i];
-
-        auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
-        latencies_nanos.push_back(duration.count());
-    }
-
-    std::sort(latencies_nanos.begin(), latencies_nanos.end());
-
-    long long sum = std::accumulate(latencies_nanos.begin(), latencies_nanos.end(), 0LL);
-    double mean = static_cast<double>(sum) / latencies_nanos.size();
-    
-    long long p50 = latencies_nanos[latencies_nanos.size() * 0.50];
-    long long p90 = latencies_nanos[latencies_nanos.size() * 0.90];
-    long long p99 = latencies_nanos[latencies_nanos.size() * 0.99];
-
-    std::cout << "\n--- Latency Benchmark Results ---" << std::endl;
-    std::cout << "Tested " << NUM_ORDERS_TO_TEST << " individual orders." << std::endl;
-    std::cout << "Mean Latency: " << mean / 1000.0 << " µs (microseconds)" << std::endl;
-    std::cout << "p50 (Median): " << p50 / 1000.0 << " µs" << std::endl;
-    std::cout << "p90 Latency:  " << p90 / 1000.0 << " µs" << std::endl;
-    std::cout << "p99 Latency:  " << p99 / 1000.0 << " µs" << std::endl;
-    std::cout << "---------------------------------\n" << std::endl;
-
-    ASSERT_GT(mean, 0);
-}
-
-TEST_F(PerformanceTest, ThroughputStressTest) {
-    std::atomic<int> trade_counter(0);
     dispatcher.subscribe<TradeExecutedEvent>([&](const TradeExecutedEvent& event) {
-        trade_counter.fetch_add(1, std::memory_order_relaxed);
+        std::lock_guard<std::mutex> lk(m);
+        trade_executed = true;
+        cv.notify_one();
     });
 
-    const int NUM_ORDERS_TO_SUBMIT = 1000000;
-    const int NUM_THREADS = 4;
-    const int ORDERS_PER_THREAD = NUM_ORDERS_TO_SUBMIT / NUM_THREADS;
-
-    engine.submitOrder({.symbol = "PERF", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = (Quantity)NUM_ORDERS_TO_SUBMIT, .traderID = 999});
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    auto start_time = std::chrono::high_resolution_clock::now();
-
-    std::vector<std::thread> threads;
-    for (int i = 0; i < NUM_THREADS; ++i) {
-        threads.emplace_back([&]() {
-            for (int j = 0; j < ORDERS_PER_THREAD; ++j) {
-                engine.submitOrder({.symbol = "PERF", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 1, .traderID = 1});
-            }
-        });
-    }
-
-    for (auto& t : threads) {
-        t.join();
-    }
-
-    while (trade_counter.load() < NUM_ORDERS_TO_SUBMIT) {
-        std::this_thread::sleep_for(std::chrono::microseconds(100));
-    }
-
-    auto end_time = std::chrono::high_resolution_clock::now();
+    // Pre-populate the order book to create a more realistic scenario
+    engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "102.00", .quantity = 50, .traderID = 999});
+    engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "101.50", .quantity = 200, .traderID = 999});
+    engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "101.00", .quantity = 100, .traderID = 999});
+    engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 1000000, .traderID = 999});
+    engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = "99.00", .quantity = 100, .traderID = 998});
+    engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = "98.50", .quantity = 200, .traderID = 998});
+    engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = "98.00", .quantity = 50, .traderID = 998});
     
-    auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
-    double seconds = duration.count() / 1e9;
-    double throughput = NUM_ORDERS_TO_SUBMIT / seconds;
+    std::this_thread::sleep_for(std::chrono::milliseconds(100)); // allow orders to be processed
 
-    std::cout << "\n--- Performance Benchmark Results ---" << std::endl;
-    std::cout << "Processed " << NUM_ORDERS_TO_SUBMIT << " orders in " << seconds << " seconds." << std::endl;
-    std::cout << "Throughput: " << static_cast<int>(throughput) << " orders/sec" << std::endl;
-    std::cout << "-------------------------------------\n" << std::endl;
+    for (auto _ : state) {
+        state.PauseTiming();
+        {
+            std::lock_guard<std::mutex> lk(m);
+            trade_executed = false;
+        }
+        state.ResumeTiming();
+        
+        // The part of the code that is timed
+        engine.submitOrder({.symbol = "LAT", .orderType = OrderType::MARKET, .side = Side::BUY, .quantity = 1, .traderID = 1});
 
-    ASSERT_GT(throughput, 0);
+        // Wait until the trade is executed
+        {
+            std::unique_lock<std::mutex> lk(m);
+            cv.wait(lk, [&]{ return trade_executed; });
+        }
+    }
 }
+
+static void BM_ThreadedThroughput(benchmark::State& state) {
+    // Shared state for all threads, initialized once
+    static std::once_flag flag;
+    static EventDispatcher dispatcher;
+    static MatchingEngine engine(dispatcher);
+
+    // Initialize and pre-fill the order book once
+    std::call_once(flag, []() {
+        engine.start();
+        // Pre-fill the order book with depth to create a realistic market
+        for (int i = 0; i < 10; ++i) {
+            // Sell side (ask)
+            engine.submitOrder({.symbol = "THR_T", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = std::to_string(100.01 + i * 0.01), .quantity = 100, .traderID = 999});
+            // Buy side (bid)
+            engine.submitOrder({.symbol = "THR_T", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = std::to_string(99.99 - i * 0.01), .quantity = 100, .traderID = 998});
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(200)); // Allow time for the order book to be built
+    });
+
+    // --- Per-thread setup ---
+    // Each thread gets a unique role (buyer/seller) and price to create a mixed workload
+    const bool is_buyer = (state.thread_index() % 2 == 0);
+    const Side side = is_buyer ? Side::BUY : Side::SELL;
+    const TraderID trader_id = static_cast<TraderID>(state.thread_index());
+
+    // Pre-calculate the price string to avoid this work in the timed loop
+    std::string price_str;
+    if (is_buyer) {
+        // Buyers will place orders at various prices, some matching, some not
+        double price = 99.98 + (state.thread_index() / 2) * 0.01;
+        price_str = std::to_string(price);
+    } else {
+        // Sellers do the same on the other side of the spread
+        double price = 100.02 - ((state.thread_index() - 1) / 2) * 0.01;
+        price_str = std::to_string(price);
+    }
+    // --- End per-thread setup ---
+
+    // The timed loop: each thread executes this loop
+    for (auto _ : state) {
+        // This is the operation we want to measure the throughput of.
+        engine.submitOrder({.symbol = "THR_T", .orderType = OrderType::LIMIT, .side = side, .price = price_str, .quantity = 1, .traderID = trader_id});
+    }
+    
+    // Tell the framework how many items this thread processed.
+    // It will be aggregated and reported as items/second.
+    state.SetItemsProcessed(state.iterations());
+}
+
+BENCHMARK(BM_ThreadedThroughput)
+    ->Threads(1)->Threads(2)->Threads(4)->Threads(8)->Threads(16)
+    ->UseRealTime();
+
+
+BENCHMARK_MAIN();

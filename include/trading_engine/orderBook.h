@@ -34,14 +34,14 @@ private:
     std::unordered_map<OrderID, std::unique_ptr<Order>> allOrders;
     std::unordered_map<OrderID, std::list<OrderID>::iterator> orderIterators;
 
+    void removeOrder(std::unordered_map<OrderID, std::unique_ptr<Order>>::iterator allOrdersIt);
+
 
 public:
 
     void addOrder(std::unique_ptr<LimitOrder> order);
 
     void cancelOrder(OrderID orderID);
-    
-    void removeOrder(OrderID orderID);
 
     Order* getOrder(OrderID orderID);
 
@@ -51,7 +51,7 @@ public:
 
     std::optional<MarketData> getBestAsk();
 
-    std::list<OrderID> getOrdersAtPrice(Price price);
+    bool forEachOrderAtPrice(Price price, Side side, const std::function<bool(OrderID)>& callback);
 
 
     bool isEmpty();

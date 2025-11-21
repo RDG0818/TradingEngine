@@ -164,24 +164,24 @@ void MatchingEngine::processOrderCancellation(OrderID orderID) {
 
 void MatchingEngine::matchOrder(Order* incomingOrder, OrderBook& book) {
     if (incomingOrder->getTimeInForce() == TimeInForce::FOK) {
-        Quantity availableQuantity = 0;
+        Quantity availableQuantityAtBestPrice = 0;
         if (incomingOrder->getSide() == Side::BUY) {
             if (book.getBestAsk().has_value()) {
                 auto bestAsk = book.getBestAsk().value();
-                if (incomingOrder->getPrice() >= bestAsk.price) {
-                    availableQuantity = book.getOrdersAtPrice(bestAsk.price).size() * book.getOrder(book.getOrdersAtPrice(bestAsk.price).front())->getQuantity();
+                if (incomingOrder->getOrderType() == OrderType::MARKET || incomingOrder->getPrice() >= bestAsk.price) {
+                    availableQuantityAtBestPrice = bestAsk.quantity;
                 }
             }
-        } else {
+        } else { // incomingOrder->getSide() == Side::SELL
             if (book.getBestBid().has_value()) {
                 auto bestBid = book.getBestBid().value();
-                if (incomingOrder->getPrice() <= bestBid.price) {
-                    availableQuantity = book.getOrdersAtPrice(bestBid.price).size() * book.getOrder(book.getOrdersAtPrice(bestBid.price).front())->getQuantity();
+                if (incomingOrder->getOrderType() == OrderType::MARKET || incomingOrder->getPrice() <= bestBid.price) {
+                    availableQuantityAtBestPrice = bestBid.quantity;
                 }
             }
         }
-        if (incomingOrder->getQuantity() > availableQuantity) {
-            return;
+        if (incomingOrder->getQuantity() > availableQuantityAtBestPrice) {
+            return; // FOK order cannot be fully filled at best price, so it's rejected
         }
     }
 
@@ -199,22 +199,29 @@ void MatchingEngine::matchOrder(Order* incomingOrder, OrderBook& book) {
             if (incomingOrder->getSide() == Side::SELL && limitPrice > bestOpposingPrice) break;
         }
         
-        std::list<OrderID> restingOrderIDs = book.getOrdersAtPrice(bestOpposingLevel->price);
+        // Use the new callback-based forEachOrderAtPrice
+        bool continueMatchingAtPriceLevel = book.forEachOrderAtPrice(bestOpposingLevel->price,
+            incomingOrder->getSide() == Side::BUY ? Side::SELL : Side::BUY,
+            [&](OrderID restingOrderID) {
+                Order* restingOrder = book.getOrder(restingOrderID); 
+                if (!restingOrder) return true; // Continue iteration if order not found
 
-        for (OrderID restingOrderID : restingOrderIDs) {
-           Order* restingOrder = book.getOrder(restingOrderID); 
-           if (!restingOrder) continue;
-           
-           Quantity tradeQuantity = std::min(incomingOrder->getQuantity(), restingOrder->getQuantity());
-           Price tradePrice = restingOrder->getPrice();
+                Quantity tradeQuantity = std::min(incomingOrder->getQuantity(), restingOrder->getQuantity());
+                Price tradePrice = restingOrder->getPrice();
 
-           createTrade(incomingOrder, restingOrder, tradePrice, tradeQuantity);
+                createTrade(incomingOrder, restingOrder, tradePrice, tradeQuantity);
 
-           incomingOrder->setQuantity(incomingOrder->getQuantity() - tradeQuantity);
-           book.reduceOrderQuantity(restingOrderID, tradeQuantity); 
+                incomingOrder->setQuantity(incomingOrder->getQuantity() - tradeQuantity);
+                book.reduceOrderQuantity(restingOrderID, tradeQuantity); 
 
-           if (incomingOrder->getQuantity() == 0) return;
-        }
+                if (incomingOrder->getQuantity() == 0) {
+                    return false; // Aggressor fully filled, stop iterating orders at this price level
+                }
+                return true; // Continue iteration
+            });
+
+        // If forEachOrderAtPrice returned false because the incoming order was fully filled,
+        // the while loop condition will handle breaking out. No explicit 'break' needed here.
     }
 }
 

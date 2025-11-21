@@ -7,6 +7,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_BUILD_TYPE Release)
 
+if (CMAKE_BUILD_TYPE MATCHES "Release")
+    add_compile_options(-march=native)
+endif()
+
 set(PROJECT_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/include)
 set(PROJECT_SRC_DIR ${PROJECT_SOURCE_DIR}/src)
 
@@ -32,6 +36,7 @@ FetchContent_MakeAvailable(googletest)
 
 
 file(GLOB_RECURSE CPP_TEST_SOURCES "tests/cpp/*.cpp")
+list(REMOVE_ITEM CPP_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/performanceTest.cpp")
 
 add_executable(my_tests 
     ${CPP_TEST_SOURCES}
@@ -40,3 +45,15 @@ add_executable(my_tests
 
 target_link_libraries(my_tests GTest::gtest_main Boost::boost)
 target_include_directories(my_tests PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Google Benchmark
+add_subdirectory(benchmark)
+enable_testing()
+
+add_executable(my_benchmarks
+    tests/cpp/performanceTest.cpp
+    ${CORE_SOURCES}
+)
+
+target_link_libraries(my_benchmarks benchmark::benchmark Boost::boost)
+target_include_directories(my_benchmarks PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

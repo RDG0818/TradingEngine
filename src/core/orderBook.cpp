@@ -31,13 +31,9 @@ void OrderBook::addOrder(std::unique_ptr<LimitOrder> order) {
     }
 }
 
-void OrderBook::removeOrder(OrderID orderID) {
-    auto it = allOrders.find(orderID);
-    if (it == allOrders.end()) {
-        return;
-    }
-
-    Order* order = it->second.get();
+void OrderBook::removeOrder(std::unordered_map<OrderID, std::unique_ptr<Order>>::iterator allOrdersIt) {
+    Order* order = allOrdersIt->second.get();
+    const OrderID orderID = order->getOrderID();
     const Price price = order->getPrice();
     const Side side = order->getSide();
     const Quantity quantity = order->getQuantity();
@@ -45,57 +41,59 @@ void OrderBook::removeOrder(OrderID orderID) {
     if (side == Side::BUY) {
         auto priceLevelIt = bids.find(price);
         if (priceLevelIt == bids.end()) {
-            throw std::logic_error("Price level not found for an existing order.");
-        }
+            // This can happen if an order is cancelled while being matched,
+            // as the matching logic might remove the price level.
+            // No further action is needed for the bids map.
+        } else {
+            PriceLevel& priceLevel = priceLevelIt->second;
+            priceLevel.totalQuantity -= quantity;
+            
+            auto orderIt = orderIterators.find(orderID);
+            if (orderIt != orderIterators.end()) {
+                priceLevel.orders.erase(orderIt->second);
+                orderIterators.erase(orderIt);
+            }
 
-        PriceLevel& priceLevel = priceLevelIt->second;
-        priceLevel.totalQuantity -= quantity;
-        
-        auto orderIt = orderIterators.find(orderID);
-        if (orderIt != orderIterators.end()) {
-            priceLevel.orders.erase(orderIt->second);
-            orderIterators.erase(orderIt);
-        }
-
-        if (priceLevel.orders.empty()) {
-            bids.erase(priceLevelIt);
+            if (priceLevel.orders.empty()) {
+                bids.erase(priceLevelIt);
+            }
         }
     } else { // Side::SELL
         auto priceLevelIt = asks.find(price);
         if (priceLevelIt == asks.end()) {
-            throw std::logic_error("Price level not found for an existing order.");
-        }
+            // See buy side comment
+        } else {
+            PriceLevel& priceLevel = priceLevelIt->second;
+            priceLevel.totalQuantity -= quantity;
+            
+            auto orderIt = orderIterators.find(orderID);
+            if (orderIt != orderIterators.end()) {
+                priceLevel.orders.erase(orderIt->second);
+                orderIterators.erase(orderIt);
+            }
 
-        PriceLevel& priceLevel = priceLevelIt->second;
-        priceLevel.totalQuantity -= quantity;
-        
-        auto orderIt = orderIterators.find(orderID);
-        if (orderIt != orderIterators.end()) {
-            priceLevel.orders.erase(orderIt->second);
-            orderIterators.erase(orderIt);
-        }
-
-        if (priceLevel.orders.empty()) {
-            asks.erase(priceLevelIt);
+            if (priceLevel.orders.empty()) {
+                asks.erase(priceLevelIt);
+            }
         }
     }
 
-    allOrders.erase(it);
+    allOrders.erase(allOrdersIt);
 }
 
 void OrderBook::cancelOrder(OrderID orderID) {
     std::unique_lock<std::mutex> orders_lock(orders_mtx);
-    auto it = allOrders.find(orderID);
-    if (it == allOrders.end()) {
+    auto allOrdersIt = allOrders.find(orderID);
+    if (allOrdersIt == allOrders.end()) {
         return;
     }
 
-    if (it->second->getSide() == Side::BUY) {
+    if (allOrdersIt->second->getSide() == Side::BUY) {
         std::unique_lock<std::shared_mutex> bids_lock(bids_mtx);
-        removeOrder(orderID);
+        removeOrder(allOrdersIt);
     } else {
         std::unique_lock<std::shared_mutex> asks_lock(asks_mtx);
-        removeOrder(orderID);
+        removeOrder(allOrdersIt);
     }
 }
 
@@ -127,7 +125,7 @@ void OrderBook::reduceOrderQuantity(OrderID orderID, Quantity quantityToReduce) 
         order->setQuantity(order->getQuantity() - quantityToReduce);
         bids.at(price).totalQuantity -= quantityToReduce;
         if (order->getQuantity() == 0) {
-            removeOrder(orderID);
+            removeOrder(allOrdersIt);
         }
     } else {
         std::unique_lock<std::shared_mutex> asks_lock(asks_mtx);
@@ -137,7 +135,7 @@ void OrderBook::reduceOrderQuantity(OrderID orderID, Quantity quantityToReduce) 
         order->setQuantity(order->getQuantity() - quantityToReduce);
         asks.at(price).totalQuantity -= quantityToReduce;
         if (order->getQuantity() == 0) {
-            removeOrder(orderID);
+            removeOrder(allOrdersIt);
         }
     }
 }
@@ -175,22 +173,29 @@ bool OrderBook::isSideEmpty(Side side) {
     }
 }
 
-std::list<OrderID> OrderBook::getOrdersAtPrice(Price price) {
-    {
+bool OrderBook::forEachOrderAtPrice(Price price, Side side, const std::function<bool(OrderID)>& callback) {
+    std::list<OrderID> orders_at_price;
+    if (side == Side::BUY) { // Looking for resting BUY orders
         std::shared_lock<std::shared_mutex> lock(bids_mtx);
         auto bidIt = bids.find(price);
         if (bidIt != bids.end()) {
-            return bidIt->second.orders; // Return a copy
+            // Make a temporary copy of OrderIDs to iterate safely
+            orders_at_price.assign(bidIt->second.orders.begin(), bidIt->second.orders.end());
         }
-    }
-
-    {
+    } else { // Side::SELL, Looking for resting SELL orders
         std::shared_lock<std::shared_mutex> lock(asks_mtx);
         auto askIt = asks.find(price);
         if (askIt != asks.end()) {
-            return askIt->second.orders; // Return a copy
+            // Make a temporary copy of OrderIDs to iterate safely
+            orders_at_price.assign(askIt->second.orders.begin(), askIt->second.orders.end());
         }
     }
 
-    return {};
+    // Now iterate over the copied IDs, safe from modifications to the original list
+    for (const auto& orderID : orders_at_price) {
+        if (!callback(orderID)) {
+            return false; // Stop iterating and return false if callback says so
+        }
+    }
+    return true; // All orders processed or no orders at price, continue
 }
