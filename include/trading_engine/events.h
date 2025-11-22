@@ -1,65 +1,90 @@
 #pragma once
-#include "types.h"
-#include "order.h"
-#include <chrono>
-#include <string>
+#include "event.h"
 
-struct TradeExecutedEvent {
-    SymbolID symbolID;
-
-    Price price;
-    Quantity quantity;
-
-    OrderID aggressingOrderID;
-    TraderID aggressingTraderID;
-    Side aggressingSide;
-    Quantity aggressingOrderRemainingQuantity;
-    
-    OrderID restingOrderID;
-    TraderID restingTraderID;
-    Quantity restingOrderRemainingQuantity;
-    
-    Timestamp timestamp = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now());
+enum class RejectionReason {
+    INVALID_PRICE,
+    INVALID_QUANTITY,
+    UNSUPPORTED_ORDER_TYPE,
+    OTHER
 };
 
-struct OrderAcceptedEvent {
+struct OrderAcceptedEvent : public Event {
     SymbolID symbolID;
     OrderID orderID;
     TraderID traderID;
     Side side;
     Price price;
     Quantity quantity;
-    Timestamp timestamp = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now());
+
+    OrderAcceptedEvent(SymbolID symbolID, OrderID orderID, TraderID traderID, Side side, Price price, Quantity quantity)
+        : symbolID(symbolID), orderID(orderID), traderID(traderID), side(side), price(price), quantity(quantity) {
+        type = EventType::ORDER_ACCEPTED;
+    }
+
+    std::string toString() const override {
+        std::stringstream ss;
+        ss << "OrderAccepted: " << orderID << " for " << symbolID << " (" << (side == Side::BUY ? "BUY" : "SELL") << " " << quantity << "@" << price << ")";
+        return ss.str();
+    }
 };
 
-enum class RejectionReason {
-    INVALID_SYMBOL,
-    INVALID_PRICE,
-    INVALID_QUANTITY,
-    UNSUPPORTED_ORDER_TYPE,
-    ORDER_ID_ALREADY_EXISTS,
-    INSUFFICIENT_FUNDS, // Example for future risk checks
-    OTHER
-};
-
-struct OrderRejectedEvent {
+struct OrderRejectedEvent : public Event {
     OrderID orderID;
     TraderID traderID;
     RejectionReason reason;
-    std::string message;
-    Timestamp timestamp = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now());
+    std::string details;
+
+    OrderRejectedEvent(OrderID orderID, TraderID traderID, RejectionReason reason, std::string details)
+        : orderID(orderID), traderID(traderID), reason(reason), details(details) {
+        type = EventType::ORDER_REJECTED;
+    }
+
+    std::string toString() const override {
+        std::stringstream ss;
+        ss << "OrderRejected: " << orderID << " - " << details;
+        return ss.str();
+    }
 };
 
-struct OrderCancelledEvent {
+struct OrderCancelledEvent : public Event {
     SymbolID symbolID;
     OrderID orderID;
     TraderID traderID;
     Quantity quantity;
-    Timestamp timestamp = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now());
+
+    OrderCancelledEvent(SymbolID symbolID, OrderID orderID, TraderID traderID, Quantity quantity)
+        : symbolID(symbolID), orderID(orderID), traderID(traderID), quantity(quantity) {
+        type = EventType::ORDER_CANCELLED;
+    }
+
+    std::string toString() const override {
+        std::stringstream ss;
+        ss << "OrderCancelled: " << orderID << " for " << symbolID;
+        return ss.str();
+    }
 };
 
-struct MarketDataEvent {
+struct TradeExecutedEvent : public Event {
     SymbolID symbolID;
-    Price last_price; 
-    Timestamp timestamp = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now());
+    Price tradePrice;
+    Quantity tradeQuantity;
+    OrderID aggressorOrderID;
+    TraderID aggressorTraderID;
+    Side aggressorSide;
+    Quantity aggressorRemainingQuantity;
+    OrderID restingOrderID;
+    TraderID restingTraderID;
+    Quantity restingRemainingQuantity;
+
+    TradeExecutedEvent(SymbolID symbolID, Price tradePrice, Quantity tradeQuantity, OrderID aggressorOrderID, TraderID aggressorTraderID, Side aggressorSide, Quantity aggressorRemainingQuantity, OrderID restingOrderID, TraderID restingTraderID, Quantity restingRemainingQuantity)
+        : symbolID(symbolID), tradePrice(tradePrice), tradeQuantity(tradeQuantity), aggressorOrderID(aggressorOrderID), aggressorTraderID(aggressorTraderID), aggressorSide(aggressorSide), aggressorRemainingQuantity(aggressorRemainingQuantity), restingOrderID(restingOrderID), restingTraderID(restingTraderID), restingRemainingQuantity(restingRemainingQuantity) {
+        type = EventType::TRADE_EXECUTED;
+    }
+
+    std::string toString() const override {
+        std::stringstream ss;
+        ss << "TradeExecuted: " << tradeQuantity << " of " << symbolID << " @ " << tradePrice
+           << " (Aggressor: " << aggressorOrderID << ", Resting: " << restingOrderID << ")";
+        return ss.str();
+    }
 };

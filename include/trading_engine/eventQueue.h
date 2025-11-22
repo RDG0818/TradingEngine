@@ -2,37 +2,31 @@
 #include <queue>
 #include <mutex>
 #include <condition_variable>
-#include <variant>
-#include "trading_engine/order.h"
-#include "trading_engine/types.h"
 #include <memory>
+#include <variant>
+#include "order.h"
 
 using EngineEvent = std::variant<std::unique_ptr<Order>, OrderID>;
 
 template<typename T>
 class ThreadSafeQueue {
-private:
-    std::queue<T> queue;
-    std::mutex mtx;
-    std::condition_variable cv;
-
 public:
     void push(T value) {
-        std::lock_guard<std::mutex> lock(mtx);
-        queue.push(std::move(value));
-        cv.notify_one();
+        std::lock_guard<std::mutex> lock(mutex_);
+        queue_.push(std::move(value));
+        cond_.notify_one();
     }
 
     T pop() {
-        std::unique_lock<std::mutex> lock(mtx);
-        cv.wait(lock, [this]{ return !queue.empty(); });
-        T value = std::move(queue.front());
-        queue.pop();
+        std::unique_lock<std::mutex> lock(mutex_);
+        cond_.wait(lock, [this]{ return !queue_.empty(); });
+        T value = std::move(queue_.front());
+        queue_.pop();
         return value;
     }
 
-    bool empty() {
-        std::lock_guard<std::mutex> lock(mtx);
-        return queue.empty();
-    }
+private:
+    std::queue<T> queue_;
+    std::mutex mutex_;
+    std::condition_variable cond_;
 };

@@ -1,29 +1,25 @@
 #pragma once
-
-#include "types.h"
 #include <string>
-#include <vector>
 #include <unordered_map>
 #include <mutex>
+#include "types.h"
 
 class SymbolRegistry {
 public:
-    SymbolRegistry(const SymbolRegistry&) = delete;
-    SymbolRegistry& operator=(const SymbolRegistry&) = delete;
+    static SymbolRegistry& getInstance();
 
-    static SymbolRegistry& getInstance() {
-        static SymbolRegistry instance; 
-        return instance;
-    }
-
-    SymbolID getID(const std::string& symbol_str);
-    const std::string& getString(SymbolID id) const;
+    SymbolID registerSymbol(const std::string& symbol);
+    SymbolID getID(const std::string& symbol);
+    std::string getSymbol(SymbolID id);
 
 private:
     SymbolRegistry() = default;
+    ~SymbolRegistry() = default;
+    SymbolRegistry(const SymbolRegistry&) = delete;
+    SymbolRegistry& operator=(const SymbolRegistry&) = delete;
 
-    SymbolID nextID_ = 0;
-    std::unordered_map<std::string, SymbolID> string_to_id_;
-    std::vector<std::string> id_to_string_;
-    mutable std::mutex mutex_; 
+    std::mutex mutex_;
+    std::unordered_map<std::string, SymbolID> symbol_to_id_;
+    std::unordered_map<SymbolID, std::string> id_to_symbol_;
+    SymbolID next_id_ = 0;
 };

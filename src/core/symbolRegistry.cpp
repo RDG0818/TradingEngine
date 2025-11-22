@@ -1,26 +1,34 @@
 #include "trading_engine/symbolRegistry.h"
 #include <stdexcept>
 
-SymbolID SymbolRegistry::getID(const std::string& symbol_str) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    
-    auto it = string_to_id_.find(symbol_str);
-    if (it != string_to_id_.end()) {
-        return it->second;
-    }
-
-    SymbolID new_id = nextID_++;
-    string_to_id_[symbol_str] = new_id;
-    id_to_string_.push_back(symbol_str);
-    
-    return new_id;
+SymbolRegistry& SymbolRegistry::getInstance() {
+    static SymbolRegistry instance;
+    return instance;
 }
 
-const std::string& SymbolRegistry::getString(SymbolID id) const {
+SymbolID SymbolRegistry::registerSymbol(const std::string& symbol) {
     std::lock_guard<std::mutex> lock(mutex_);
-
-    if (id >= id_to_string_.size()) {
-        throw std::out_of_range("SymbolID out of range.");
+    if (symbol_to_id_.count(symbol)) {
+        return symbol_to_id_[symbol];
     }
-    return id_to_string_[id];
+    SymbolID id = next_id_++;
+    symbol_to_id_[symbol] = id;
+    id_to_symbol_[id] = symbol;
+    return id;
+}
+
+SymbolID SymbolRegistry::getID(const std::string& symbol) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!symbol_to_id_.count(symbol)) {
+        throw std::invalid_argument("Symbol not found: " + symbol);
+    }
+    return symbol_to_id_[symbol];
+}
+
+std::string SymbolRegistry::getSymbol(SymbolID id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!id_to_symbol_.count(id)) {
+        throw std::invalid_argument("ID not found: " + std::to_string(id));
+    }
+    return id_to_symbol_[id];
 }
