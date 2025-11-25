@@ -10,8 +10,6 @@
 #include "eventQueue.h"
 #include "types.h"
 #include "orderFactory.h"
-#include "stopMarketOrder.h"
-#include "stopLimitOrder.h"
 #include <list>
 
 class MatchingEngine {

@@ -8,7 +8,6 @@
 #include <optional>
 #include <functional>
 #include "order.h"
-#include "limitOrder.h"
 #include "types.h"
 
 // TODO: Utilize lockless data structures here
@@ -52,7 +51,6 @@ public:
     std::optional<MarketData> getBestAsk();
 
     bool forEachOrderAtPrice(Price price, Side side, const std::function<bool(OrderID)>& callback);
-
 
     bool isEmpty();
 

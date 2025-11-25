@@ -1,10 +1,6 @@
 #pragma once
 
 #include "order.h"
-#include "limitOrder.h"
-#include "marketOrder.h"
-#include "stopMarketOrder.h"
-#include "stopLimitOrder.h"
 #include "symbolRegistry.h"
 #include "events.h"
 #include "exceptions.h"

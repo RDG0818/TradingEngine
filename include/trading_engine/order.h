@@ -73,3 +73,64 @@ public:
         orderID = id;
     }
 };
+
+
+class LimitOrder : public Order {
+private:
+    Price price;
+
+public:
+
+    LimitOrder(SymbolID symbolID, OrderID orderID, Side side, Price price, Quantity quantity, TraderID traderID, TimeInForce tif = TimeInForce::GTC)
+        : Order(symbolID, orderID, OrderType::LIMIT, side, quantity, traderID, tif), price(price) {}
+
+    Price getPrice() const override {
+        return price;
+    }
+
+};
+
+class StopLimitOrder : public Order {
+private:
+    Price stopPrice;
+    Price limitPrice;
+
+public:
+    StopLimitOrder(SymbolID symbolID, OrderID orderID, Side side, Quantity quantity, TraderID traderID, Price stopPrice, Price limitPrice, TimeInForce tif = TimeInForce::GTC)
+        : Order(symbolID, orderID, OrderType::STOP_LIMIT, side, quantity, traderID, tif), stopPrice(stopPrice), limitPrice(limitPrice) {}
+
+    Price getStopPrice() const {
+        return stopPrice;
+    }
+
+    Price getPrice() const override {
+        return limitPrice;
+    }
+};
+
+class MarketOrder : public Order {
+public:
+    MarketOrder(
+        SymbolID symbolID,
+        OrderID orderID,
+        Side side,
+        Quantity quantity,
+        TraderID traderID
+    ) : Order(symbolID, orderID, OrderType::MARKET, side, quantity, traderID) {}
+
+    Price getPrice() const override { return 0; }
+};
+
+class StopMarketOrder : public Order {
+private:
+
+    Price stopPrice;
+
+public:
+    StopMarketOrder(SymbolID symbolID, OrderID orderID, Side side, Quantity quantity, TraderID traderID, Price stopPrice)
+        : Order(symbolID, orderID, OrderType::STOP_MARKET, side, quantity, traderID), stopPrice(stopPrice) {}
+
+    Price getStopPrice() const {
+        return stopPrice;
+    }
+};

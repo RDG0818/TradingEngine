@@ -2,8 +2,6 @@
 #include "trading_engine/matchingEngine.h"
 #include "trading_engine/orderBook.h"
 #include "trading_engine/eventDispatcher.h"
-#include "trading_engine/limitOrder.h"
-#include "trading_engine/marketOrder.h"
 #include "trading_engine/types.h"
 #include "trading_engine/symbolRegistry.h"
 #include "trading_engine/orderFactory.h"
