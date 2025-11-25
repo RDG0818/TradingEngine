@@ -98,7 +98,32 @@ void MatchingEngine::processOrderSubmission(std::unique_ptr<Order> order) {
     }
 
     OrderBook* book = getOrCreateOrderBook(order->getSymbolID());
+
+    // Level 1/2 Feed Dissemination
+    
+    auto prevBestBid = book->getBestBid();
+    auto prevBestAsk = book->getBestAsk();
+
     matchOrder(order.get(), *book);
+
+    auto currentBestBid = book->getBestBid();
+    auto currentBestAsk = book->getBestAsk();
+
+    bool bidChanged = (prevBestBid.has_value() != currentBestBid.has_value()) || 
+                  (currentBestBid.has_value() && (prevBestBid->price != currentBestBid->price || prevBestBid->quantity != currentBestBid->quantity));
+
+    bool askChanged = (prevBestAsk.has_value() != currentBestAsk.has_value()) || 
+                    (currentBestAsk.has_value() && (prevBestAsk->price != currentBestAsk->price || prevBestAsk->quantity != currentBestAsk->quantity));
+
+    if (bidChanged || askChanged) {
+        dispatcher.publish(BookUpdateEvent{
+            order->getSymbolID(),
+            currentBestBid.value_or(MarketData{0, 0}).price,
+            currentBestBid.value_or(MarketData{0, 0}).quantity,
+            currentBestAsk.value_or(MarketData{0, 0}).price,
+            currentBestAsk.value_or(MarketData{0, 0}).quantity
+        });
+    }
 
     if (order->getQuantity() > 0) {
         if (order->getTimeInForce() == TimeInForce::IOC || order->getTimeInForce() == TimeInForce::FOK) {

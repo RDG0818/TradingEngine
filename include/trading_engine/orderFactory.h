@@ -3,7 +3,6 @@
 #include "order.h"
 #include "symbolRegistry.h"
 #include "events.h"
-#include "exceptions.h"
 #include <string>
 #include <memory>
 #include <stdexcept>

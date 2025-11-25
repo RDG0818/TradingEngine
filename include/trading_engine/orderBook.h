@@ -8,7 +8,7 @@
 #include <optional>
 #include <functional>
 #include "order.h"
-#include "types.h"
+#include "utils.h"
 
 // TODO: Utilize lockless data structures here
 

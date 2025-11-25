@@ -3,12 +3,12 @@
 #include <atomic>
 #include <unordered_map>
 #include "orderBook.h"
-#include "types.h"
+#include "utils.h"
 #include "eventDispatcher.h"
 #include "events.h"
 #include <memory>
 #include "eventQueue.h"
-#include "types.h"
+#include "utils.h"
 #include "orderFactory.h"
 #include <list>
 

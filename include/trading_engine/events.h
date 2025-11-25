@@ -1,5 +1,5 @@
 #pragma once
-#include "types.h"
+#include "utils.h"
 #include "order.h"
 #include <chrono>
 #include <string>
@@ -61,5 +61,14 @@ struct OrderCancelledEvent {
 struct MarketDataEvent {
     SymbolID symbolID;
     Price last_price; 
+    Timestamp timestamp = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now());
+};
+
+struct BookUpdateEvent {
+    SymbolID symbolID;
+    Price bestBidPrice;
+    Quantity bestBidQty;
+    Price bestAskPrice;
+    Quantity bestAskQty;
     Timestamp timestamp = std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now());
 };

@@ -3,8 +3,8 @@
 #include <mutex>
 #include <condition_variable>
 #include <variant>
-#include "trading_engine/order.h"
-#include "trading_engine/types.h"
+#include "order.h"
+#include "utils.h"
 #include <memory>
 
 using EngineEvent = std::variant<std::unique_ptr<Order>, OrderID>;

@@ -46,7 +46,6 @@ cmake --build build
 ## Future Work
 
 TODO:
-- Implement orderbook dissemination logic
 - Implement different algorithm traders (random, momentum, etc.)
 - Implement risk layer
 
