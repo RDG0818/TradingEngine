@@ -19,14 +19,13 @@ struct TestEventB {
     std::string message;
 };
 
-// Test fixture for the EventDispatcher
 class EventDispatcherTest : public ::testing::Test {
 protected:
     EventDispatcher dispatcher;
 };
 
 
-// --- Test Cases ---
+// Test Cases 
 
 TEST_F(EventDispatcherTest, BasicSubscribeAndPublish) {
     int receivedValue = 0;
@@ -48,10 +47,13 @@ TEST_F(EventDispatcherTest, MultipleSubscribersForSameEvent) {
     dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
         counter++;
     });
+    dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
+        counter++;
+    });
 
     dispatcher.publish(TestEventA{100});
 
-    EXPECT_EQ(counter, 2);
+    EXPECT_EQ(counter, 3);
 }
 
 TEST_F(EventDispatcherTest, CorrectSubscriberForCorrectEventType) {
@@ -69,11 +71,14 @@ TEST_F(EventDispatcherTest, CorrectSubscriberForCorrectEventType) {
 
     EXPECT_TRUE(eventAReceived);
     EXPECT_FALSE(eventBReceived);
+
+    dispatcher.publish(TestEventB{"test"});
+
+    EXPECT_TRUE(eventAReceived);
+    EXPECT_TRUE(eventBReceived);
 }
 
 TEST_F(EventDispatcherTest, PublishWithNoSubscribers) {
-    // This test simply ensures that publishing with no subscribers
-    // does not cause any errors or crashes.
     EXPECT_NO_THROW(dispatcher.publish(TestEventA{99}));
 }
 
@@ -87,10 +92,8 @@ TEST_F(EventDispatcherTest, SubscriberThrowsException) {
         secondSubscriberWasCalled = true;
     });
 
-    // We expect no exceptions to escape the publish method.
     EXPECT_NO_THROW(dispatcher.publish(TestEventA{1}));
 
-    // We expect the second subscriber to still be called even after the first one threw.
     EXPECT_TRUE(secondSubscriberWasCalled);
 }
 
@@ -124,8 +127,6 @@ TEST_F(EventDispatcherTest, MultithreadedStressTest) {
 
     // The final count is unpredictable due to race conditions of when
     // subscriptions are added vs. when events are published.
-    // The key purpose of this test is to ensure that the dispatcher
-    // can handle concurrent access without crashing or deadlocking.
     // A non-zero count proves the system is fundamentally working.
     EXPECT_GT(eventCount, 0);
     std::cout << "Multithreaded test completed with " << eventCount << " events handled." << std::endl;

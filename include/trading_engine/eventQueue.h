@@ -7,7 +7,9 @@
 #include "utils.h"
 #include <memory>
 
-using EngineEvent = std::variant<std::unique_ptr<Order>, OrderID>;
+// TODO: Consider using a lockless data structure
+
+using EngineEvent = std::variant<std::unique_ptr<Order>, OrderID>; // Is this necessary?
 
 template<typename T>
 class ThreadSafeQueue {

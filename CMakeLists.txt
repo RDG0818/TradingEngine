@@ -38,22 +38,26 @@ FetchContent_MakeAvailable(googletest)
 file(GLOB_RECURSE CPP_TEST_SOURCES "tests/cpp/*.cpp")
 list(REMOVE_ITEM CPP_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/performanceTest.cpp")
 
-add_executable(my_tests 
+add_executable(tests 
     ${CPP_TEST_SOURCES}
     ${CORE_SOURCES}
 )
 
-target_link_libraries(my_tests GTest::gtest_main Boost::boost)
-target_include_directories(my_tests PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(tests GTest::gtest_main Boost::boost)
+target_include_directories(tests PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Google Benchmark
-add_subdirectory(benchmark)
+FetchContent_Declare(
+  benchmark
+  URL https://github.com/google/benchmark/archive/refs/tags/v1.8.3.zip
+)
+FetchContent_MakeAvailable(benchmark)
 enable_testing()
 
-add_executable(my_benchmarks
+add_executable(benchmarks
     tests/cpp/performanceTest.cpp
     ${CORE_SOURCES}
 )
 
-target_link_libraries(my_benchmarks benchmark::benchmark Boost::boost)
-target_include_directories(my_benchmarks PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(benchmarks benchmark::benchmark Boost::boost)
+target_include_directories(benchmarks PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

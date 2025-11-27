@@ -231,6 +231,19 @@ void MatchingEngine::matchOrder(Order* incomingOrder, OrderBook& book) {
                 Order* restingOrder = book.getOrder(restingOrderID); 
                 if (!restingOrder) return true; // Continue iteration if order not found
 
+                // Self Match Prevention
+                if (restingOrder->getTraderID() == incomingOrder->getTraderID()) {
+                    dispatcher.publish(OrderCancelledEvent{
+                        restingOrder->getSymbolID(),
+                        restingOrderID,
+                        restingOrder->getTraderID(),
+                        restingOrder->getQuantity()
+                    });
+
+                    book.cancelOrder(restingOrderID);
+                    return true;
+                }
+
                 Quantity tradeQuantity = std::min(incomingOrder->getQuantity(), restingOrder->getQuantity());
                 Price tradePrice = restingOrder->getPrice();
 

@@ -6,12 +6,14 @@
 #include <unordered_map>
 #include <mutex>
 
+// For mapping ticker symbols to integer IDs
+
 class SymbolRegistry {
 public:
+    // Meyer's Singleton 
     SymbolRegistry(const SymbolRegistry&) = delete;
     SymbolRegistry& operator=(const SymbolRegistry&) = delete;
-
-    static SymbolRegistry& getInstance() {
+    static SymbolRegistry& getInstance() { 
         static SymbolRegistry instance; 
         return instance;
     }

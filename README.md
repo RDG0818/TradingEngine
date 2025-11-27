@@ -14,8 +14,9 @@ A high-performance trading engine built in C++.
     - Good 'Til Canceled (GTC)
     - Fill or Kill (FOK)
     - Immediate or Cancel (IOC)
+- Level 1/2/3 Feed Information
 - Google Test
-- Google Benchmark (Include results)
+- Google Benchmark 
 
 ## Getting Started
 
@@ -27,7 +28,7 @@ A high-performance trading engine built in C++.
 ```bash
 git clone https://github.com/RDG0818/TradingEngine.git
 cd TradingEngine
-git submodule update --init --recursive
+
 ```
 
 **Build the C++ core:**

@@ -10,7 +10,7 @@
 #include "order.h"
 #include "utils.h"
 
-// TODO: Utilize lockless data structures here
+// TODO: Utilize lockless data structures and resource pooling 
 
 struct MarketData {
     Price price;
@@ -30,8 +30,8 @@ private:
 
     std::map<Price, PriceLevel, std::greater<Price>> bids; // Sorted high to low
     std::map<Price, PriceLevel> asks;                      // Sorted low to high
-    std::unordered_map<OrderID, std::unique_ptr<Order>> allOrders;
-    std::unordered_map<OrderID, std::list<OrderID>::iterator> orderIterators;
+    std::unordered_map<OrderID, std::unique_ptr<Order>> allOrders; // O(1) lookup for Order data
+    std::unordered_map<OrderID, std::list<OrderID>::iterator> orderIterators; // O(1) removal from PriceLevel list
 
     void removeOrder(std::unordered_map<OrderID, std::unique_ptr<Order>>::iterator allOrdersIt);
 

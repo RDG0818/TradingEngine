@@ -32,7 +32,7 @@ void OrderBook::addOrder(std::unique_ptr<LimitOrder> order) {
 }
 
 void OrderBook::removeOrder(std::unordered_map<OrderID, std::unique_ptr<Order>>::iterator allOrdersIt) {
-    Order* order = allOrdersIt->second.get();
+    Order* order = allOrdersIt->second.get(); // Error checking handled in cancelOrder
     const OrderID orderID = order->getOrderID();
     const Price price = order->getPrice();
     const Side side = order->getSide();
@@ -40,11 +40,7 @@ void OrderBook::removeOrder(std::unordered_map<OrderID, std::unique_ptr<Order>>:
 
     if (side == Side::BUY) {
         auto priceLevelIt = bids.find(price);
-        if (priceLevelIt == bids.end()) {
-            // This can happen if an order is cancelled while being matched,
-            // as the matching logic might remove the price level.
-            // No further action is needed for the bids map.
-        } else {
+        if (priceLevelIt != bids.end()) {
             PriceLevel& priceLevel = priceLevelIt->second;
             priceLevel.totalQuantity -= quantity;
             
@@ -57,12 +53,10 @@ void OrderBook::removeOrder(std::unordered_map<OrderID, std::unique_ptr<Order>>:
             if (priceLevel.orders.empty()) {
                 bids.erase(priceLevelIt);
             }
-        }
+        } 
     } else { // Side::SELL
         auto priceLevelIt = asks.find(price);
-        if (priceLevelIt == asks.end()) {
-            // See buy side comment
-        } else {
+        if (priceLevelIt != asks.end()) {
             PriceLevel& priceLevel = priceLevelIt->second;
             priceLevel.totalQuantity -= quantity;
             
@@ -75,7 +69,7 @@ void OrderBook::removeOrder(std::unordered_map<OrderID, std::unique_ptr<Order>>:
             if (priceLevel.orders.empty()) {
                 asks.erase(priceLevelIt);
             }
-        }
+        } 
     }
 
     allOrders.erase(allOrdersIt);
@@ -175,19 +169,17 @@ bool OrderBook::isSideEmpty(Side side) {
 
 bool OrderBook::forEachOrderAtPrice(Price price, Side side, const std::function<bool(OrderID)>& callback) {
     std::list<OrderID> orders_at_price;
-    if (side == Side::BUY) { // Looking for resting BUY orders
+    if (side == Side::BUY) { 
         std::shared_lock<std::shared_mutex> lock(bids_mtx);
         auto bidIt = bids.find(price);
         if (bidIt != bids.end()) {
-            // Make a temporary copy of OrderIDs to iterate safely
-            orders_at_price.assign(bidIt->second.orders.begin(), bidIt->second.orders.end());
+            orders_at_price.assign(bidIt->second.orders.begin(), bidIt->second.orders.end()); // copied by value
         }
-    } else { // Side::SELL, Looking for resting SELL orders
+    } else { // Side::SELL 
         std::shared_lock<std::shared_mutex> lock(asks_mtx);
         auto askIt = asks.find(price);
         if (askIt != asks.end()) {
-            // Make a temporary copy of OrderIDs to iterate safely
-            orders_at_price.assign(askIt->second.orders.begin(), askIt->second.orders.end());
+            orders_at_price.assign(askIt->second.orders.begin(), askIt->second.orders.end()); // copied by value
         }
     }
 

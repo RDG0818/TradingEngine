@@ -4,9 +4,10 @@
 #include <utility>
 #include "utils.h"
 
+// Abstract class for other Order types
+
 class Order {
 private:
-    // Reordered for better memory alignment
     Timestamp timestamp;
     OrderID orderID;
     SymbolID symbolID;
@@ -133,4 +134,6 @@ public:
     Price getStopPrice() const {
         return stopPrice;
     }
+
+    Price getPrice() const override { return 0; }
 };

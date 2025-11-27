@@ -1,6 +1,8 @@
 #include "trading_engine/symbolRegistry.h"
 #include <stdexcept>
 
+// string -> ID
+
 SymbolID SymbolRegistry::getID(const std::string& symbol_str) {
     std::lock_guard<std::mutex> lock(mutex_);
     
@@ -15,6 +17,8 @@ SymbolID SymbolRegistry::getID(const std::string& symbol_str) {
     
     return new_id;
 }
+
+// ID -> string
 
 const std::string& SymbolRegistry::getString(SymbolID id) const {
     std::lock_guard<std::mutex> lock(mutex_);
