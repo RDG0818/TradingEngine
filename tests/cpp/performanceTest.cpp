@@ -15,7 +15,6 @@
 #include <condition_variable>
 #include <string>
 
-// Setup for benchmarks
 class BenchmarkFixture : public benchmark::Fixture {
 public:
     EventDispatcher dispatcher;
@@ -43,7 +42,6 @@ BENCHMARK_F(BenchmarkFixture, BM_OrderLatency)(benchmark::State& state) {
         cv.notify_one();
     });
 
-    // Pre-populate the order book to create a more realistic scenario
     engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "102.00", .quantity = 50, .traderID = 999});
     engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "101.50", .quantity = 200, .traderID = 999});
     engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "101.00", .quantity = 100, .traderID = 999});
@@ -52,7 +50,7 @@ BENCHMARK_F(BenchmarkFixture, BM_OrderLatency)(benchmark::State& state) {
     engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = "98.50", .quantity = 200, .traderID = 998});
     engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = "98.00", .quantity = 50, .traderID = 998});
     
-    std::this_thread::sleep_for(std::chrono::milliseconds(100)); // allow orders to be processed
+    std::this_thread::sleep_for(std::chrono::milliseconds(100)); 
 
     for (auto _ : state) {
         state.PauseTiming();
@@ -62,7 +60,6 @@ BENCHMARK_F(BenchmarkFixture, BM_OrderLatency)(benchmark::State& state) {
         }
         state.ResumeTiming();
         
-        // The part of the code that is timed
         engine.submitOrder({.symbol = "LAT", .orderType = OrderType::MARKET, .side = Side::BUY, .quantity = 1, .traderID = 1});
 
         // Wait until the trade is executed

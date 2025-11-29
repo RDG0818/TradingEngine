@@ -1,6 +1,7 @@
 #include "trading_engine/matchingEngine.h"
 #include "trading_engine/orderFactory.h"
 #include <variant>
+#include <iostream>
 
 MatchingEngine::MatchingEngine(EventDispatcher& eventDispatcher)
     : dispatcher(eventDispatcher), nextOrderID(1) {}
@@ -270,6 +271,7 @@ void MatchingEngine::placeRestingLimitOrder(std::unique_ptr<LimitOrder> order, O
 }
 
 void MatchingEngine::createTrade(Order* aggressor, Order* resting, Price tradePrice, Quantity tradeQuantity) {
+
     Quantity aggressorRemaining = aggressor->getQuantity() - tradeQuantity;
     Quantity restingRemaining = resting->getQuantity() - tradeQuantity;
     aggressor->setOrderStatus(aggressorRemaining > 0 ? OrderStatus::PARTIALLY_FILLED : OrderStatus::FILLED);

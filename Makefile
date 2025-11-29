@@ -1,4 +1,4 @@
-all: build stubs
+all: build 
 
 build:
 	@echo "Building C++ components..."
