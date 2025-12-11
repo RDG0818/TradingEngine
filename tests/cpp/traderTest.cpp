@@ -14,9 +14,9 @@ protected:
 
     EventDispatcher dispatcher;
     MatchingEngine engine;
+    std::chrono::milliseconds tickInterval = std::chrono::milliseconds(100);
     TraderManager manager;
     LiquidityTrader* liquidTrader_ptr = nullptr;
-    std::chrono::milliseconds tickInterval = std::chrono::milliseconds(100);
 
     // Member variables to hold test results, moved from test body.
     std::vector<TradeExecutedEvent> trade_events;
@@ -33,7 +33,7 @@ public:
             [&](const TradeExecutedEvent& event) {
                 std::lock_guard<std::mutex> lock(events_mutex);
                 // We only care about trades where our trader was the aggressor
-                if (event.aggressingTraderID == liquidTrader_ptr->getID()) {
+                if (liquidTrader_ptr && event.aggressingTraderID == liquidTrader_ptr->getID()) {
                     trade_events.push_back(event);
                 }
             }
@@ -44,13 +44,14 @@ public:
 
         engine.submitOrder({.symbol = "AAPL", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 100000, .traderID = 999});
         engine.submitOrder({.symbol = "AAPL", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = "99.00", .quantity = 100000, .traderID = 998});
-
+        engine.submitOrder({.symbol = "GOOG", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "50.00", .quantity = 100000, .traderID = 997});
+        engine.submitOrder({.symbol = "GOOG", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = "49.00", .quantity = 100000, .traderID = 996});
         // Use a high lambda to ensure orders are submitted quickly for a deterministic test.
         auto liquidTrader = std::make_unique<LiquidityTrader>(
             engine,
             dispatcher,
             0,
-            1.0,
+            10.0,
             tickInterval,
             std::vector<std::string>{"AAPL", "GOOG"},
             5
@@ -62,7 +63,7 @@ public:
         manager.start();
         
         // Sleep to allow the system to warm up and process initial trades.
-        std::this_thread::sleep_for(std::chrono::milliseconds(100)); 
+        std::this_thread::sleep_for(std::chrono::milliseconds(10)); 
     }
 
     void TearDown() override {
@@ -72,15 +73,11 @@ public:
 };
 
 TEST_F(traderTest, LiquidityTraderSubmitsOrder) {
-    // A short wait to ensure events generated during SetUp are processed.
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-    // Stop the engine and manager to create a synchronization point, ensuring
-    // all event processing is finished before we check the results.
     manager.stop();
     engine.stop(); 
 
-    // It is now safe to access trade_events without a lock because the producer threads are stopped.
     std::cout << "Received " << trade_events.size() << " TradeExecutedEvents from the LiquidityTrader." << std::endl;
 
     ASSERT_FALSE(trade_events.empty()) << "No trades were executed by the LiquidityTrader.";
