@@ -306,9 +306,11 @@ void MatchingEngine::triggerStopOrders(Price lastTradePrice) {
             }
         }
         it = stop_buy_orders_.erase(it);
+
     }
 
     // Trigger sell stop orders
+
     for (auto it = stop_sell_orders_.begin(); it != stop_sell_orders_.end() && it->first >= lastTradePrice; ) {
         for (auto& order : it->second) {
             if (order->getOrderType() == OrderType::STOP_MARKET) {
@@ -319,4 +321,22 @@ void MatchingEngine::triggerStopOrders(Price lastTradePrice) {
         }
         it = stop_sell_orders_.erase(it);
     }
+}
+
+std::optional<MarketData> MatchingEngine::getBestAsk(SymbolID symbolID) const {
+    std::lock_guard<std::mutex> lock(books_mutex_);
+    auto it = books_.find(symbolID);
+    if (it != books_.end()) {
+        return it->second->getBestAsk();
+    }
+    return std::nullopt;
+}
+
+std::optional<MarketData> MatchingEngine::getBestBid(SymbolID symbolID) const {
+    std::lock_guard<std::mutex> lock(books_mutex_);
+    auto it = books_.find(symbolID);
+    if (it != books_.end()) {
+        return it->second->getBestBid();
+    }
+    return std::nullopt;
 }

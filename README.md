@@ -48,7 +48,7 @@ cmake --build build
 
 TODO:
 - Implement different algorithm traders (random, momentum, etc.)
-- Implement risk layer
+- Add a way to see top of book
 
 - Support for multiple symbols in a single backtest
 - Implementation of more complex order types (e.g. Stop-Loss, Iceberg)

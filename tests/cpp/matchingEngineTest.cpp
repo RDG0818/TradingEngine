@@ -12,6 +12,8 @@
 #include <condition_variable>
 #include <atomic>
 
+// TODO: Update this to test UpdateBookEvent
+
 class MockEventListener {
 public:
     void subscribe(EventDispatcher& dispatcher) {
@@ -369,4 +371,42 @@ TEST_F(MatchingEngineTestV2, LimitOrderFOK_PartialFill_Cancels) {
     ASSERT_TRUE(bestAsk.has_value());
     EXPECT_EQ(bestAsk->price, 1000000);
     EXPECT_EQ(bestAsk->quantity, 5);
+}
+
+TEST_F(MatchingEngineTestV2, SelfMatchPrevention_RestingOrderCancelled) {
+    // Trader 1 places a SELL limit order
+    OrderID restingSellOrderID = engine.submitOrder({.symbol = "AAPL", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 10, .traderID = 1});
+    listener.waitForEvents(0, 0, 1, 0);
+    listener.clear(); // Clear events to only capture new events
+
+    // Trader 1 places a BUY limit order at the same price (should trigger self-match prevention)
+    OrderID incomingBuyOrderID = engine.submitOrder({.symbol = "AAPL", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 10, .traderID = 1});
+    
+    // Expect 1 cancellation (resting sell order) and 1 acceptance (incoming buy order)
+    listener.waitForEvents(0, 1, 1, 0); 
+
+    // Verify no trades occurred
+    EXPECT_TRUE(listener.getTrades().empty());
+
+    // Verify the resting sell order was cancelled
+    auto cancellations = listener.getCancellations();
+    ASSERT_EQ(cancellations.size(), 1);
+    EXPECT_EQ(cancellations[0].orderID, restingSellOrderID);
+    EXPECT_EQ(cancellations[0].traderID, 1);
+    EXPECT_EQ(cancellations[0].quantity, 10);
+
+    // Verify the incoming buy order was accepted
+    auto acceptances = listener.getAcceptances();
+    ASSERT_EQ(acceptances.size(), 1);
+    EXPECT_EQ(acceptances[0].orderID, incomingBuyOrderID);
+    EXPECT_EQ(acceptances[0].traderID, 1);
+
+    // Verify the incoming buy order is now resting on the book
+    OrderBook* book = engine.getBook(aapl_id);
+    ASSERT_NE(book, nullptr);
+    auto bestBid = book->getBestBid();
+    ASSERT_TRUE(bestBid.has_value());
+    EXPECT_EQ(bestBid->price, 1000000);
+    EXPECT_EQ(bestBid->quantity, 10);
+    EXPECT_TRUE(book->isSideEmpty(Side::SELL)); // The sell side should be empty as the resting order was cancelled
 }

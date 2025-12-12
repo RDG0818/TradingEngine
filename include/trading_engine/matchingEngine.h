@@ -48,6 +48,8 @@ public:
     
     OrderID submitOrder(const RawOrderParams& params);
     void cancelOrder(OrderID orderID);
+    std::optional<MarketData> getBestAsk(SymbolID symbolID) const;
+    std::optional<MarketData> getBestBid(SymbolID symbolID) const;
     
     void start();
     void stop();

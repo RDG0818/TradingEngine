@@ -17,9 +17,11 @@ protected:
     std::chrono::milliseconds tickInterval = std::chrono::milliseconds(100);
     TraderManager manager;
     LiquidityTrader* liquidTrader_ptr = nullptr;
+    RandomTrader* randomTrader_ptr = nullptr;
 
     // Member variables to hold test results, moved from test body.
     std::vector<TradeExecutedEvent> trade_events;
+    std::vector<OrderAcceptedEvent> accepted_events;
     std::mutex events_mutex;
 
 public:
@@ -39,6 +41,13 @@ public:
             }
         );
 
+        dispatcher.subscribe<OrderAcceptedEvent>(
+            [&](const OrderAcceptedEvent& event) {
+                std::lock_guard<std::mutex> lock(events_mutex);
+                accepted_events.push_back(event);
+            }
+        );
+
         engine.start();
         std::this_thread::sleep_for(std::chrono::milliseconds(100)); 
 
@@ -50,15 +59,28 @@ public:
         auto liquidTrader = std::make_unique<LiquidityTrader>(
             engine,
             dispatcher,
-            0,
+            0, // TraderID
             10.0,
             tickInterval,
             std::vector<std::string>{"AAPL", "GOOG"},
-            5
+            5 // Max quantity
         );
         liquidTrader_ptr = liquidTrader.get();
         manager.addTrader(std::move(liquidTrader));
         
+        auto randomTrader = std::make_unique<RandomTrader>(
+            engine,
+            dispatcher,
+            1,
+            10.0,
+            tickInterval,
+            std::vector<std::string>{"AAPL", "GOOG"},
+            10,
+            5.0 // Normal Dist Variation
+        );
+        randomTrader_ptr = randomTrader.get();
+        manager.addTrader(std::move(randomTrader));
+
         // Start the manager AFTER subscribing.
         manager.start();
         
@@ -93,4 +115,17 @@ TEST_F(traderTest, LiquidityTraderSubmitsOrder) {
         << "Trade was not for an expected symbol.";
 }
 
+TEST_F(traderTest, RandomTraderSubmitsOrder) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
+    int num_accepted_events = 0;
+    for (auto event : accepted_events) {
+        if (event.traderID == 1) {// RandomTrader's ID
+            num_accepted_events++;
+        }
+    }
+
+    std::cout << "Received " << num_accepted_events << " OrderAcceptedEvents from the RandomTrader." << std::endl;
+    ASSERT_FALSE(num_accepted_events == 0) << "No trades were executed by the RandomTrader.";
+    
+}
