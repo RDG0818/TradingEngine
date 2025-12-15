@@ -60,7 +60,7 @@ public:
             engine,
             dispatcher,
             0, // TraderID
-            10.0,
+            1000.0,
             tickInterval,
             std::vector<std::string>{"AAPL", "GOOG"},
             5 // Max quantity
@@ -72,11 +72,11 @@ public:
             engine,
             dispatcher,
             1,
-            10.0,
+            10000.0,
             tickInterval,
             std::vector<std::string>{"AAPL", "GOOG"},
             10,
-            5.0 // Normal Dist Variation
+            0.1 // Normal Dist Variation
         );
         randomTrader_ptr = randomTrader.get();
         manager.addTrader(std::move(randomTrader));
@@ -95,7 +95,7 @@ public:
 };
 
 TEST_F(traderTest, LiquidityTraderSubmitsOrder) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     manager.stop();
     engine.stop(); 
@@ -116,7 +116,7 @@ TEST_F(traderTest, LiquidityTraderSubmitsOrder) {
 }
 
 TEST_F(traderTest, RandomTraderSubmitsOrder) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     int num_accepted_events = 0;
     for (auto event : accepted_events) {
@@ -127,5 +127,8 @@ TEST_F(traderTest, RandomTraderSubmitsOrder) {
 
     std::cout << "Received " << num_accepted_events << " OrderAcceptedEvents from the RandomTrader." << std::endl;
     ASSERT_FALSE(num_accepted_events == 0) << "No trades were executed by the RandomTrader.";
-    
+
+    engine.printTopOfBook("AAPL", 10);
+    engine.printTopOfBook("GOOG", 10);
+
 }

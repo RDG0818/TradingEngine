@@ -8,13 +8,19 @@ A high-performance trading engine built in C++.
 - Matching Engine
 - Orderbook
 - Support for the following order types:
-    - Limit and Stop Limit
-    - Market and Stop Market
+    - Limit
+    - Stop Limit
+    - Market
+    - Stop Market
 - Support for the following Time in Force:
     - Good 'Til Canceled (GTC)
     - Fill or Kill (FOK)
     - Immediate or Cancel (IOC)
 - Level 1/2/3 Feed Information
+- Automated Traders for Realistic Market Movements
+    - Market Maker Bot
+    - Random Limit Order Bot
+    - Random Market Order Bot
 - Google Test
 - Google Benchmark 
 
@@ -48,10 +54,7 @@ cmake --build build
 
 TODO:
 - Implement different algorithm traders (random, momentum, etc.)
-- Add a way to see top of book
 
-- Support for multiple symbols in a single backtest
-- Implementation of more complex order types (e.g. Stop-Loss, Iceberg)
 - Integration with a visualization library for plotting equity curves and performance metrics
 - Support for options and other derivatives
 - Support for live paper trading on crypto

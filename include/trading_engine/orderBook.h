@@ -55,4 +55,6 @@ public:
     bool isEmpty();
 
     bool isSideEmpty(Side side);
+
+    void print(int numPriceLevels) const;
 };

@@ -1,4 +1,10 @@
 #include "trading_engine/orderBook.h"
+#include <iostream>
+#include <vector>
+#include <string>
+#include <sstream>
+#include <iomanip>
+#include <algorithm>
 
 void OrderBook::addOrder(std::unique_ptr<LimitOrder> order) {
     const Side side = order->getSide();
@@ -190,4 +196,106 @@ bool OrderBook::forEachOrderAtPrice(Price price, Side side, const std::function<
         }
     }
     return true; // All orders processed or no orders at price, continue
+}
+
+void OrderBook::print(int numPriceLevels) const {
+    std::cout << std::endl;
+    const std::string red_color = "\033[31m";
+    const std::string green_color = "\033[32m";
+    const std::string reset_color = "\033[0m";
+
+    struct PrintLevel {
+        Price price;
+        Quantity quantity;
+        Side side;
+    };
+
+    std::vector<PrintLevel> display_levels;
+    Quantity max_quantity_in_display = 0; // Max quantity among displayed levels
+    std::optional<Price> best_ask_price;
+    std::optional<Price> best_bid_price;
+
+    // Collect asks for display, limited by priceLevels
+    {
+        std::shared_lock lock(asks_mtx);
+        if (!asks.empty()) {
+            best_ask_price = asks.begin()->first;
+        }
+        auto it = asks.begin();
+        for (int i = 0; i < numPriceLevels && it != asks.end(); ++i, ++it) {
+            display_levels.push_back({it->first, it->second.totalQuantity, Side::SELL});
+            if (it->second.totalQuantity > max_quantity_in_display) {
+                max_quantity_in_display = it->second.totalQuantity;
+            }
+        }
+    }
+
+    // Collect bids for display, limited by priceLevels
+    {
+        std::shared_lock lock(bids_mtx);
+        if (!bids.empty()) {
+            best_bid_price = bids.begin()->first;
+        }
+        auto it = bids.begin();
+        for (int i = 0; i < numPriceLevels && it != bids.end(); ++i, ++it) {
+            display_levels.push_back({it->first, it->second.totalQuantity, Side::BUY});
+            if (it->second.totalQuantity > max_quantity_in_display) {
+                max_quantity_in_display = it->second.totalQuantity;
+            }
+        }
+    }
+
+    // Sort the collected levels by price descending for display
+    std::sort(display_levels.begin(), display_levels.end(), [](const PrintLevel& a, const PrintLevel& b) {
+        return a.price > b.price;
+    });
+
+    std::cout << std::left << std::setw(10) << "Price"
+              << std::right << std::setw(10) << "Quantity"
+              << "   Volume" << std::endl;
+    std::cout << std::string(75, '-') << std::endl;
+
+    const int bar_width = 50;
+    bool spread_printed = false;
+
+    for (const auto& level : display_levels) {
+        // Check if we should print the spread.
+        // This condition triggers when we transition from asks to bids in the sorted display.
+        if (!spread_printed && best_bid_price.has_value() && level.side == Side::BUY) {
+            // Find the highest priced ask among the displayed asks to determine the actual visual spread point
+            // This is necessary because display_levels is sorted descending by price,
+            // so the first bid we encounter after potentially some asks indicates the spread position.
+            std::optional<Price> lowest_displayed_ask_price;
+            for (const auto& l : display_levels) {
+                if (l.side == Side::SELL) {
+                    lowest_displayed_ask_price = l.price;
+                } else {
+                    break; // stop when we hit bids
+                }
+            }
+
+            spread_printed = true;
+        }
+
+        const std::string& color = (level.side == Side::BUY) ? green_color : red_color;
+        double price = static_cast<double>(level.price) / 10000.0;
+
+        int bar_length = 0;
+        if (max_quantity_in_display > 0) {
+            bar_length = static_cast<int>((static_cast<double>(level.quantity) / max_quantity_in_display) * bar_width);
+        }
+        if (level.quantity > 0 && bar_length == 0 && max_quantity_in_display > 0) {
+            bar_length = 1; 
+        }
+        std::string bar(bar_length, '='); 
+
+        std::cout << color
+                  << std::left << std::setw(10) << std::fixed << std::setprecision(4) << price
+                  << std::right << std::setw(10) << level.quantity << " "
+                  << std::left << bar
+                  << reset_color << std::endl;
+    }
+
+    std::cout << std::endl;
+
 }

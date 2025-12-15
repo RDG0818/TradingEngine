@@ -340,3 +340,9 @@ std::optional<MarketData> MatchingEngine::getBestBid(SymbolID symbolID) const {
     }
     return std::nullopt;
 }
+
+void MatchingEngine::printTopOfBook(std::string symbol, int numPriceLevels) {
+    SymbolID symbolID = SymbolRegistry::getInstance().getID(symbol);
+    OrderBook* ob = getBook(symbolID);
+    if (ob != nullptr) ob->print(numPriceLevels);
+}

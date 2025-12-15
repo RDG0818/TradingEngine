@@ -50,6 +50,7 @@ public:
     void cancelOrder(OrderID orderID);
     std::optional<MarketData> getBestAsk(SymbolID symbolID) const;
     std::optional<MarketData> getBestBid(SymbolID symbolID) const;
+    void printTopOfBook(std::string symbol, int numPriceLevels); // Strictly for visualization/debugging
     
     void start();
     void stop();
