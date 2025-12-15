@@ -6,6 +6,7 @@
 #include <mutex>
 #include <iostream>
 #include <chrono>
+#include <unordered_map>
 
 class traderTest : public ::testing::Test {
 private:
@@ -18,6 +19,7 @@ protected:
     TraderManager manager;
     LiquidityTrader* liquidTrader_ptr = nullptr;
     RandomTrader* randomTrader_ptr = nullptr;
+    MarketMakerTrader* marketMakerTrader_ptr = nullptr;
 
     // Member variables to hold test results, moved from test body.
     std::vector<TradeExecutedEvent> trade_events;
@@ -76,10 +78,25 @@ public:
             tickInterval,
             std::vector<std::string>{"AAPL", "GOOG"},
             10,
-            0.1 // Normal Dist Variation
+            0.05 // Normal Dist Variation
         );
         randomTrader_ptr = randomTrader.get();
         manager.addTrader(std::move(randomTrader));
+
+        auto marketMakerTrader = std::make_unique<MarketMakerTrader>(
+            engine,
+            dispatcher,
+            2, // TraderID
+            std::vector<std::string>{"AAPL", "GOOG"},
+            0.0, // mu
+            0.1, // sigma
+            0.001, // spread
+            tickInterval,
+            10, // max quantity
+            std::unordered_map<std::string, double>{{"AAPL", 100.0}, {"GOOG", 50.0}} // initial prices
+        );
+        marketMakerTrader_ptr = marketMakerTrader.get();
+        manager.addTrader(std::move(marketMakerTrader));
 
         // Start the manager AFTER subscribing.
         manager.start();
@@ -132,3 +149,34 @@ TEST_F(traderTest, RandomTraderSubmitsOrder) {
     engine.printTopOfBook("GOOG", 10);
 
 }
+
+TEST_F(traderTest, MarketMakerTraderSubmitsOrders) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    manager.stop();
+    engine.stop();
+
+    int mm_accepted_orders = 0;
+    bool found_buy = false;
+    bool found_sell = false;
+    for (const auto& event : accepted_events) {
+        if (event.traderID == marketMakerTrader_ptr->getID()) {
+            mm_accepted_orders++;
+            if (event.side == Side::BUY) {
+                found_buy = true;
+            }
+            if (event.side == Side::SELL) {
+                found_sell = true;
+            }
+        }
+    }
+
+    std::cout << "Received " << mm_accepted_orders << " OrderAcceptedEvents from the MarketMakerTrader." << std::endl;
+    ASSERT_GT(mm_accepted_orders, 0) << "MarketMakerTrader did not submit any orders.";
+    ASSERT_TRUE(found_buy) << "MarketMakerTrader did not submit any BUY orders.";
+    ASSERT_TRUE(found_sell) << "MarketMakerTrader did not submit any SELL orders.";
+
+    engine.printTopOfBook("AAPL", 10);
+    engine.printTopOfBook("GOOG", 10);
+}
+

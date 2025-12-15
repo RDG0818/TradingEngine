@@ -253,7 +253,7 @@ void OrderBook::print(int numPriceLevels) const {
     std::cout << std::left << std::setw(10) << "Price"
               << std::right << std::setw(10) << "Quantity"
               << "   Volume" << std::endl;
-    std::cout << std::string(75, '-') << std::endl;
+    std::cout << std::string(70, '-') << std::endl;
 
     const int bar_width = 50;
     bool spread_printed = false;

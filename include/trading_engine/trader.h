@@ -260,7 +260,8 @@ private:
 public:
     MarketMakerTrader(MatchingEngine& engine, EventDispatcher& dispatcher, TraderID traderID, 
         const std::vector<std::string>& symbols, double mu, double sigma, double spread,
-        std::chrono::milliseconds time_delta, int max_quantity, double initial_price)
+        std::chrono::milliseconds time_delta, int max_quantity, 
+        const std::unordered_map<std::string, double>& initial_prices)
         : Trader(TraderType::MARKET_MAKER, engine, dispatcher, traderID, symbols),
         gen(rd()),
         norm_dist(0.0, 1.0),
@@ -268,11 +269,9 @@ public:
         mu_(mu),
         sigma_(sigma),
         spread_(spread),
-        dt_(std::chrono::duration<double>(time_delta).count())
+        dt_(std::chrono::duration<double>(time_delta).count()),
+        fair_prices_(initial_prices)
     {
-        for (const auto& symbol : symbols) {
-            fair_prices_[symbol] = initial_price;
-        }
     }
 
     void tick() override {
@@ -281,29 +280,28 @@ public:
         }
 
         for (const auto& symbol : symbols_) {
-            // 1. Get current fair price, potentially update from market
-            double current_fair_price = fair_prices_[symbol];
+            if (fair_prices_.find(symbol) == fair_prices_.end()) {
+                continue; 
+            }
+
+            double current_fair_price = fair_prices_.at(symbol);
 
             SymbolID sym_id = SymbolRegistry::getInstance().getID(symbol);
             auto best_bid = engine().getBestBid(sym_id);
             auto best_ask = engine().getBestAsk(sym_id);
 
             if (best_bid.has_value() && best_ask.has_value()) {
-                // Assuming Price is an integer type with 4 decimal places
                 double mid_price = (best_bid.value().price + best_ask.value().price) / 2.0 / 10000.0;
                 current_fair_price = mid_price;
             }
 
-            // 2. Calculate new fair price using GBM
             double W = norm_dist(gen);
             double new_fair_price = current_fair_price * std::exp((mu_ - 0.5 * sigma_ * sigma_) * dt_ + sigma_ * std::sqrt(dt_) * W);
             fair_prices_[symbol] = new_fair_price;
 
-            // 3. Calculate bid and ask prices
             double bid_price = new_fair_price * (1.0 - spread_);
             double ask_price = new_fair_price * (1.0 + spread_);
             
-            // 4. Submit orders
             std::string bid_price_str = format_price(bid_price);
             if (!bid_price_str.empty()) {
                 RawOrderParams buy_rop = {
