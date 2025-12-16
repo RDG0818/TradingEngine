@@ -1,139 +1,173 @@
+// include/trading_engine/order.h
 #pragma once
-#include <string>
+
 #include <chrono>
+#include <string>
 #include <utility>
+
 #include "utils.h"
 
 // Abstract class for other Order types
 
 class Order {
-private:
-    Timestamp timestamp;
-    OrderID orderID;
-    SymbolID symbolID;
-    Quantity quantity;
-    TraderID traderID;
-    OrderType orderType;
-    OrderStatus orderStatus = OrderStatus::NEW;
-    Side side;
-    TimeInForce tif;
 
 public:
-    Order(SymbolID symbolID, OrderID orderID, OrderType orderType, Side side, Quantity quantity, TraderID traderID, TimeInForce tif = TimeInForce::GTC)
-        : timestamp(std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now())),
-          orderID(orderID),
-          symbolID(symbolID),
-          quantity(quantity),
-          traderID(traderID),
-          orderType(orderType),
-          side(side),
-          tif(tif) {
-    }
 
-    virtual ~Order() = default;
+  Order(SymbolID symbol_id, 
+      OrderID order_id, 
+      OrderType order_type, 
+      Side side, 
+      Quantity quantity, 
+      TraderID trader_id, 
+      TimeInForce tif = TimeInForce::GTC)
+    : timestamp_(std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now())),
+      order_id_(order_id),
+      symbol_id_(symbol_id),
+      quantity_(quantity),
+      trader_id_(trader_id),
+      order_type_(order_type),
+      side_(side),
+      tif_(tif) {}
 
-    SymbolID getSymbolID() const {
-        return symbolID;
-    }
-    virtual Price getPrice() const { return 0; }
-    OrderID getOrderID() const {
-        return orderID;
-    }
-    OrderType getOrderType() const {
-        return orderType;
-    }
-    OrderStatus getOrderStatus() const {
-        return orderStatus;
-    }
-    Side getSide() const {
-        return side;
-    }
-    Quantity getQuantity() const {
-        return quantity;
-    }
-    TraderID getTraderID() const {
-        return traderID;
-    }
-    Timestamp getTimestamp() const {
-        return timestamp;
-    }
-    TimeInForce getTimeInForce() const {
-        return tif;
-    }
+  virtual ~Order() = default;
 
-    void setOrderStatus(OrderStatus status) {
-        orderStatus = status;
-    }
+  // Accessors
+  SymbolID getSymbolID() const {return symbol_id_;}
+  OrderID getOrderID() const {return order_id_;}
+  OrderType getOrderType() const {return order_type_;}
+  OrderStatus getOrderStatus() const {return order_status_;}
+  Side getSide() const {return side_;}
+  Quantity getQuantity() const {return quantity_;}
+  TraderID getTraderID() const {return trader_id_;}
+  Timestamp getTimestamp() const {return timestamp_;}
+  TimeInForce getTimeInForce() const {return tif_;}
+  virtual Price getPrice() const { return 0; }
+  virtual Price getStopPrice() const { return 0; }
 
-    void setQuantity(Quantity q) {
-        quantity = q;
-    }
+  // Mutators
+  void setOrderStatus(OrderStatus status) {order_status_ = status;}
+  void setQuantity(Quantity q) {quantity_ = q;}
+  void setOrderID(OrderID id) {order_id_ = id;} // Should only be used for internal setup or testing
 
-    // NOTE: This should only be used for internal setup or testing
-    void setOrderID(OrderID id) {
-        orderID = id;
-    }
+private:
+
+  Timestamp timestamp_;
+  OrderID order_id_;
+  SymbolID symbol_id_;
+  Quantity quantity_;
+  TraderID trader_id_;
+  OrderType order_type_;
+  OrderStatus order_status_ = OrderStatus::NEW;
+  Side side_;
+  TimeInForce tif_;
+
 };
 
-
 class LimitOrder : public Order {
-private:
-    Price price;
 
 public:
 
-    LimitOrder(SymbolID symbolID, OrderID orderID, Side side, Price price, Quantity quantity, TraderID traderID, TimeInForce tif = TimeInForce::GTC)
-        : Order(symbolID, orderID, OrderType::LIMIT, side, quantity, traderID, tif), price(price) {}
+  LimitOrder(SymbolID symbol_id, 
+      OrderID order_id, 
+      Side side, 
+      Price price, 
+      Quantity quantity, 
+      TraderID trader_id, 
+      TimeInForce tif = TimeInForce::GTC)
+    : Order(symbol_id, 
+            order_id, 
+            OrderType::LIMIT, 
+            side, 
+            quantity, 
+            trader_id, 
+            tif), 
+      price_(price) {}
 
-    Price getPrice() const override {
-        return price;
-    }
+  Price getPrice() const override {return price_;}
+  Price getStopPrice() const override { return 0; }
+
+private:
+
+  Price price_;
 
 };
 
 class StopLimitOrder : public Order {
-private:
-    Price stopPrice;
-    Price limitPrice;
 
 public:
-    StopLimitOrder(SymbolID symbolID, OrderID orderID, Side side, Quantity quantity, TraderID traderID, Price stopPrice, Price limitPrice, TimeInForce tif = TimeInForce::GTC)
-        : Order(symbolID, orderID, OrderType::STOP_LIMIT, side, quantity, traderID, tif), stopPrice(stopPrice), limitPrice(limitPrice) {}
 
-    Price getStopPrice() const {
-        return stopPrice;
-    }
+  StopLimitOrder(SymbolID symbol_id, 
+      OrderID order_id, 
+      Side side, 
+      Quantity quantity, 
+      TraderID trader_id, 
+      Price stop_price, 
+      Price limit_price, 
+      TimeInForce tif = TimeInForce::GTC)
+    : Order(symbol_id, 
+            order_id, 
+            OrderType::STOP_LIMIT, 
+            side, 
+            quantity, 
+            trader_id, 
+            tif),
+      stop_price_(stop_price), limit_price_(limit_price) {}
 
-    Price getPrice() const override {
-        return limitPrice;
-    }
+  Price getStopPrice() const {return stop_price_;}
+  Price getPrice() const override {return limit_price_;}
+
+private:
+
+  Price stop_price_;
+  Price limit_price_;
+
 };
 
 class MarketOrder : public Order {
-public:
-    MarketOrder(
-        SymbolID symbolID,
-        OrderID orderID,
-        Side side,
-        Quantity quantity,
-        TraderID traderID
-    ) : Order(symbolID, orderID, OrderType::MARKET, side, quantity, traderID) {}
 
-    Price getPrice() const override { return 0; }
+public:
+
+  MarketOrder(
+      SymbolID symbol_id,
+      OrderID order_id,
+      Side side,
+      Quantity quantity,
+      TraderID trader_id) 
+    : Order(symbol_id, 
+            order_id, 
+            OrderType::MARKET, 
+            side, 
+            quantity, 
+            trader_id) {}
+
+  Price getPrice() const override { return 0; }
+  Price getStopPrice() const override { return 0; }
+
 };
 
 class StopMarketOrder : public Order {
-private:
-
-    Price stopPrice;
 
 public:
-    StopMarketOrder(SymbolID symbolID, OrderID orderID, Side side, Quantity quantity, TraderID traderID, Price stopPrice)
-        : Order(symbolID, orderID, OrderType::STOP_MARKET, side, quantity, traderID), stopPrice(stopPrice) {}
 
-    Price getStopPrice() const {
-        return stopPrice;
-    }
+  StopMarketOrder(SymbolID symbol_id, 
+      OrderID order_id, 
+      Side side, 
+      Quantity quantity, 
+      TraderID trader_id, 
+      Price stop_price)
+    : Order(symbol_id, 
+            order_id, 
+            OrderType::STOP_MARKET, 
+            side, 
+            quantity, 
+            trader_id), 
+      stop_price_(stop_price) {}
 
-    Price getPrice() const override { return 0; }
+  Price getPrice() const override { return 0; }
+  Price getStopPrice() const {return stop_price_;}
+
+private:
+
+  Price stop_price_;
+
 };
