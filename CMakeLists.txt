@@ -21,6 +21,10 @@ include_directories(
 )
 
 file(GLOB_RECURSE CORE_SOURCES ${PROJECT_SRC_DIR}/core/*.cpp)
+list(REMOVE_ITEM CORE_SOURCES "${PROJECT_SRC_DIR}/core/main.cpp")
+add_library(core_lib STATIC ${CORE_SOURCES})
+target_include_directories(core_lib PUBLIC ${PROJECT_INCLUDE_DIR})
+
 
 find_package(Boost REQUIRED)
 
@@ -40,11 +44,17 @@ list(REMOVE_ITEM CPP_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/perform
 
 add_executable(tests 
     ${CPP_TEST_SOURCES}
-    ${CORE_SOURCES}
 )
 
-target_link_libraries(tests GTest::gtest_main Boost::boost)
+target_link_libraries(tests GTest::gtest_main Boost::boost core_lib)
 target_include_directories(tests PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_executable(main
+    src/core/main.cpp
+)
+
+target_link_libraries(main Boost::boost core_lib)
+target_include_directories(main PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Google Benchmark
 FetchContent_Declare(
@@ -56,8 +66,7 @@ enable_testing()
 
 add_executable(benchmarks
     tests/cpp/performanceTest.cpp
-    ${CORE_SOURCES}
 )
 
-target_link_libraries(benchmarks benchmark::benchmark Boost::boost)
+target_link_libraries(benchmarks benchmark::benchmark Boost::boost core_lib)
 target_include_directories(benchmarks PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

@@ -8,6 +8,8 @@
 #include <chrono>
 #include <unordered_map>
 
+// TODO: Add more robust test of each trader
+
 class traderTest : public ::testing::Test {
 private:
 

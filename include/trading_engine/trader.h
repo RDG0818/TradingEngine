@@ -8,6 +8,9 @@
 #include <cmath>
 #include <unordered_map>
 
+// TODO: Move most of this logic to trader.cpp file
+// TODO: subcribe each trader to events for submission verification
+
 enum class TraderType : std::uint8_t {
     RANDOM,
     MARKET_MAKER,
@@ -83,6 +86,8 @@ public:
 };
 
 // Lambda is average per second
+// TODO: Rename to RandomMarketTrader
+// TODO: Add more complex logic 
 
 class LiquidityTrader : public Trader {
 private:
@@ -138,6 +143,10 @@ public:
         }
     };
 
+
+// TODO: Add the format_price function from MarketMakerTrader to RandomTrader
+// TODO: Rename to RandomLimitTrader
+// TODO: Add more complex logic here
 class RandomTrader : public Trader {
 private:
     std::random_device rd;
@@ -226,6 +235,10 @@ public:
         }
     }
 };
+
+// TODO: Add inventory skew to this
+// TODO: comment code
+// TODO: Add more complex logic
 
 class MarketMakerTrader : public Trader {
 private:
@@ -332,3 +345,6 @@ public:
         }
     }
 };
+
+
+// TODO: Add other two traders from enum

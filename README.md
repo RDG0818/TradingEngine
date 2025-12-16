@@ -17,8 +17,8 @@ A high-performance trading engine built in C++.
     - Fill or Kill (FOK)
     - Immediate or Cancel (IOC)
 - Level 1/2/3 Feed Information
-- Automated Traders for Realistic Market Movements
-    - Market Maker Bot
+- Automated Traders for Realistic Market Movements (Poisson Distribution)
+    - Market Maker Bot (Following Geometric Brownian Motion)
     - Random Limit Order Bot
     - Random Market Order Bot
 - Google Test
@@ -54,6 +54,7 @@ cmake --build build
 
 TODO:
 - Implement different algorithm traders (random, momentum, etc.)
+- Incorporate more of boost
 
 - Integration with a visualization library for plotting equity curves and performance metrics
 - Support for options and other derivatives
