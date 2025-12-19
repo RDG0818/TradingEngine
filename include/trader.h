@@ -2,6 +2,7 @@
 #include "matchingEngine.h"
 #include "eventDispatcher.h"
 #include "events.h"
+#include "symbolRegistry.h"
 #include <iostream>
 #include <random>
 #include <vector>
@@ -127,12 +128,12 @@ public:
         while (time_until_order_s <= 0) {
             RawOrderParams rop = {
                 .symbol = symbols_[symbol_dist(gen)],
-                .orderType = OrderType::MARKET,
+                .order_type = OrderType::MARKET,
                 .side = side_dist(gen) ? Side::BUY : Side::SELL,
                 .price = "",
-                .stopPrice = "",
+                .stop_price = "",
                 .quantity = static_cast<Quantity>(quantity_dist(gen)),
-                .traderID = getID(),
+                .trader_id = getID(),
             };
 
             engine().submitOrder(rop);
@@ -187,7 +188,7 @@ public:
 
         while (time_until_order_s <= 0) {
             std::string sym = symbols_[symbol_dist(gen)];
-            SymbolID sym_id = SymbolRegistry::getInstance().getID(sym);
+            SymbolID sym_id = SymbolRegistry::get_instance().get_id(sym);
             Side side = side_dist(gen) ? Side::BUY : Side::SELL;    
             std::string price;
 
@@ -222,12 +223,12 @@ public:
             
             RawOrderParams rop = {
                 .symbol = sym,
-                .orderType = OrderType::LIMIT,
+                .order_type = OrderType::LIMIT,
                 .side = side,
                 .price = price,
-                .stopPrice = "",
+                .stop_price = "",
                 .quantity = static_cast<Quantity>(quantity_dist(gen)),
-                .traderID = getID(),
+                .trader_id = getID(),
             };
 
             engine().submitOrder(rop);
@@ -299,7 +300,7 @@ public:
 
             double current_fair_price = fair_prices_.at(symbol);
 
-            SymbolID sym_id = SymbolRegistry::getInstance().getID(symbol);
+            SymbolID sym_id = SymbolRegistry::get_instance().get_id(symbol);
             auto best_bid = engine().getBestBid(sym_id);
             auto best_ask = engine().getBestAsk(sym_id);
 
@@ -319,12 +320,12 @@ public:
             if (!bid_price_str.empty()) {
                 RawOrderParams buy_rop = {
                     .symbol = symbol,
-                    .orderType = OrderType::LIMIT,
+                    .order_type = OrderType::LIMIT,
                     .side = Side::BUY,
                     .price = bid_price_str,
-                    .stopPrice = "",
+                    .stop_price = "",
                     .quantity = static_cast<Quantity>(quantity_dist(gen)),
-                    .traderID = getID(),
+                    .trader_id = getID(),
                 };
                 engine().submitOrder(buy_rop);
             }
@@ -333,12 +334,12 @@ public:
             if (!ask_price_str.empty()) {
                 RawOrderParams sell_rop = {
                     .symbol = symbol,
-                    .orderType = OrderType::LIMIT,
+                    .order_type = OrderType::LIMIT,
                     .side = Side::SELL,
                     .price = ask_price_str,
-                    .stopPrice = "",
+                    .stop_price = "",
                     .quantity = static_cast<Quantity>(quantity_dist(gen)),
-                    .traderID = getID(),
+                    .trader_id = getID(),
                 };
                 engine().submitOrder(sell_rop);
             }

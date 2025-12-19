@@ -1,4 +1,4 @@
-#include "trading_engine/orderBook.h"
+#include "orderBook.h"
 #include <iostream>
 #include <vector>
 #include <string>
@@ -7,10 +7,10 @@
 #include <algorithm>
 
 void OrderBook::addOrder(std::unique_ptr<LimitOrder> order) {
-    const Side side = order->getSide();
-    const OrderID orderID = order->getOrderID();
-    const Price price = order->getPrice();
-    const Quantity quantity = order->getQuantity();
+    const Side side = order->get_side();
+    const OrderID orderID = order->get_order_id();
+    const Price price = order->get_price();
+    const Quantity quantity = order->get_quantity();
 
     if (side == Side::BUY) {
         std::scoped_lock lock(orders_mtx, bids_mtx);
@@ -39,10 +39,10 @@ void OrderBook::addOrder(std::unique_ptr<LimitOrder> order) {
 
 void OrderBook::removeOrder(std::unordered_map<OrderID, std::unique_ptr<Order>>::iterator allOrdersIt) {
     Order* order = allOrdersIt->second.get(); // Error checking handled in cancelOrder
-    const OrderID orderID = order->getOrderID();
-    const Price price = order->getPrice();
-    const Side side = order->getSide();
-    const Quantity quantity = order->getQuantity();
+    const OrderID orderID = order->get_order_id();
+    const Price price = order->get_price();
+    const Side side = order->get_side();
+    const Quantity quantity = order->get_quantity();
 
     if (side == Side::BUY) {
         auto priceLevelIt = bids.find(price);
@@ -88,7 +88,7 @@ void OrderBook::cancelOrder(OrderID orderID) {
         return;
     }
 
-    if (allOrdersIt->second->getSide() == Side::BUY) {
+    if (allOrdersIt->second->get_side() == Side::BUY) {
         std::unique_lock<std::shared_mutex> bids_lock(bids_mtx);
         removeOrder(allOrdersIt);
     } else {
@@ -114,27 +114,27 @@ void OrderBook::reduceOrderQuantity(OrderID orderID, Quantity quantityToReduce) 
     }
 
     Order* order = allOrdersIt->second.get();
-    const Price price = order->getPrice();
-    const Side side = order->getSide();
+    const Price price = order->get_price();
+    const Side side = order->get_side();
 
     if (side == Side::BUY) {
         std::unique_lock<std::shared_mutex> bids_lock(bids_mtx);
-        if (quantityToReduce > order->getQuantity()) {
-            quantityToReduce = order->getQuantity();
+        if (quantityToReduce > order->get_quantity()) {
+            quantityToReduce = order->get_quantity();
         }
-        order->setQuantity(order->getQuantity() - quantityToReduce);
+        order->set_quantity(order->get_quantity() - quantityToReduce);
         bids.at(price).totalQuantity -= quantityToReduce;
-        if (order->getQuantity() == 0) {
+        if (order->get_quantity() == 0) {
             removeOrder(allOrdersIt);
         }
     } else {
         std::unique_lock<std::shared_mutex> asks_lock(asks_mtx);
-        if (quantityToReduce > order->getQuantity()) {
-            quantityToReduce = order->getQuantity();
+        if (quantityToReduce > order->get_quantity()) {
+            quantityToReduce = order->get_quantity();
         }
-        order->setQuantity(order->getQuantity() - quantityToReduce);
+        order->set_quantity(order->get_quantity() - quantityToReduce);
         asks.at(price).totalQuantity -= quantityToReduce;
-        if (order->getQuantity() == 0) {
+        if (order->get_quantity() == 0) {
             removeOrder(allOrdersIt);
         }
     }

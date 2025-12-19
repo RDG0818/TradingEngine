@@ -1,5 +1,5 @@
-#include "trading_engine/matchingEngine.h"
-#include "trading_engine/trader.h"
+#include "matchingEngine.h"
+#include "trader.h"
 #include <iostream>
 #include <signal.h>
 #include <atomic>

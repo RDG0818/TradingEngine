@@ -1,6 +1,6 @@
-#include "trading_engine/trader.h"
+#include "trader.h"
 #include "gtest/gtest.h"
-#include "trading_engine/symbolRegistry.h"
+#include "symbolRegistry.h"
 #include <memory>
 #include <vector>
 #include <mutex>
@@ -39,7 +39,7 @@ public:
             [&](const TradeExecutedEvent& event) {
                 std::lock_guard<std::mutex> lock(events_mutex);
                 // We only care about trades where our trader was the aggressor
-                if (liquidTrader_ptr && event.aggressingTraderID == liquidTrader_ptr->getID()) {
+                if (liquidTrader_ptr && event.aggressing_trader_id == liquidTrader_ptr->getID()) {
                     trade_events.push_back(event);
                 }
             }
@@ -55,10 +55,10 @@ public:
         engine.start();
         std::this_thread::sleep_for(std::chrono::milliseconds(100)); 
 
-        engine.submitOrder({.symbol = "AAPL", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 100000, .traderID = 999});
-        engine.submitOrder({.symbol = "AAPL", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = "99.00", .quantity = 100000, .traderID = 998});
-        engine.submitOrder({.symbol = "GOOG", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "50.00", .quantity = 100000, .traderID = 997});
-        engine.submitOrder({.symbol = "GOOG", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = "49.00", .quantity = 100000, .traderID = 996});
+        engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 100000, .trader_id = 999});
+        engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "99.00", .quantity = 100000, .trader_id = 998});
+        engine.submitOrder({.symbol = "GOOG", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "50.00", .quantity = 100000, .trader_id = 997});
+        engine.submitOrder({.symbol = "GOOG", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "49.00", .quantity = 100000, .trader_id = 996});
         // Use a high lambda to ensure orders are submitted quickly for a deterministic test.
         auto liquidTrader = std::make_unique<LiquidityTrader>(
             engine,
@@ -125,12 +125,12 @@ TEST_F(traderTest, LiquidityTraderSubmitsOrder) {
 
     // Optional: further checks on the trade event
     const auto& first_trade = trade_events.front();
-    ASSERT_EQ(first_trade.aggressingTraderID, liquidTrader_ptr->getID());
+    ASSERT_EQ(first_trade.aggressing_trader_id, liquidTrader_ptr->getID());
     
-    SymbolID aapl_id = SymbolRegistry::getInstance().getID("AAPL");
-    SymbolID goog_id = SymbolRegistry::getInstance().getID("GOOG");
+    SymbolID aapl_id = SymbolRegistry::get_instance().get_id("AAPL");
+    SymbolID goog_id = SymbolRegistry::get_instance().get_id("GOOG");
 
-    ASSERT_TRUE(first_trade.symbolID == aapl_id || first_trade.symbolID == goog_id)
+    ASSERT_TRUE(first_trade.symbol_id == aapl_id || first_trade.symbol_id == goog_id)
         << "Trade was not for an expected symbol.";
 }
 
@@ -139,7 +139,7 @@ TEST_F(traderTest, RandomTraderSubmitsOrder) {
 
     int num_accepted_events = 0;
     for (auto event : accepted_events) {
-        if (event.traderID == 1) {// RandomTrader's ID
+        if (event.trader_id == 1) {// RandomTrader's ID
             num_accepted_events++;
         }
     }
@@ -162,7 +162,7 @@ TEST_F(traderTest, MarketMakerTraderSubmitsOrders) {
     bool found_buy = false;
     bool found_sell = false;
     for (const auto& event : accepted_events) {
-        if (event.traderID == marketMakerTrader_ptr->getID()) {
+        if (event.trader_id == marketMakerTrader_ptr->getID()) {
             mm_accepted_orders++;
             if (event.side == Side::BUY) {
                 found_buy = true;

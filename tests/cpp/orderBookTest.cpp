@@ -1,8 +1,8 @@
 #include "gtest/gtest.h"
-#include "trading_engine/orderBook.h"
-#include "trading_engine/order.h"
-#include "trading_engine/utils.h"
-#include "trading_engine/symbolRegistry.h"
+#include "orderBook.h"
+#include "order.h"
+#include "utils.h"
+#include "symbolRegistry.h"
 #include <memory>
 #include <optional>
 
@@ -13,7 +13,7 @@ protected:
 
     void SetUp() override {
         orderBook = std::make_unique<OrderBook>();
-        aapl_id = SymbolRegistry::getInstance().getID("AAPL");
+        aapl_id = SymbolRegistry::get_instance().get_id("AAPL");
     }
 };
 
@@ -104,7 +104,7 @@ TEST_F(OrderBookTest, ReduceOrderQuantityForPartialFill) {
 
     Order* order = orderBook->getOrder(1);
     ASSERT_NE(order, nullptr);
-    EXPECT_EQ(order->getQuantity(), 10);
+    EXPECT_EQ(order->get_quantity(), 10);
 }
 
 // Test reducing an order's quantity with a full fill, which should remove the order.

@@ -1,5 +1,6 @@
-#include "trading_engine/matchingEngine.h"
-#include "trading_engine/orderFactory.h"
+#include "matchingEngine.h"
+#include "orderFactory.h"
+#include "symbolRegistry.h"
 #include <variant>
 #include <iostream>
 
@@ -14,22 +15,22 @@ OrderID MatchingEngine::submitOrder(const RawOrderParams& params) {
     OrderID id = nextOrderID.fetch_add(1);
     
     try {
-        SymbolID symbolID = SymbolRegistry::getInstance().getID(params.symbol);
+        SymbolID symbolID = SymbolRegistry::get_instance().get_id(params.symbol);
         {
             std::lock_guard<std::mutex> lock(order_map_mutex_);
             orderID_to_symbol_[id] = symbolID;
         }
 
-        auto order = OrderFactory::createOrder(params, id);
+        auto order = order_factory::create_order(params, id);
         event_queue.push(std::move(order));
     } catch (const InvalidPriceException& e) {
-        dispatcher.publish(OrderRejectedEvent{id, params.traderID, RejectionReason::INVALID_PRICE, e.what()});
+        dispatcher.publish(OrderRejectedEvent(id, params.trader_id, RejectionReason::INVALID_PRICE, e.what()));
     } catch (const InvalidQuantityException& e) {
-        dispatcher.publish(OrderRejectedEvent{id, params.traderID, RejectionReason::INVALID_QUANTITY, e.what()});
+        dispatcher.publish(OrderRejectedEvent(id, params.trader_id, RejectionReason::INVALID_QUANTITY, e.what()));
     } catch (const UnsupportedOrderTypeException& e) {
-        dispatcher.publish(OrderRejectedEvent{id, params.traderID, RejectionReason::UNSUPPORTED_ORDER_TYPE, e.what()});
+        dispatcher.publish(OrderRejectedEvent(id, params.trader_id, RejectionReason::UNSUPPORTED_ORDER_TYPE, e.what()));
     } catch (const std::invalid_argument& e) {
-        dispatcher.publish(OrderRejectedEvent{id, params.traderID, RejectionReason::OTHER, e.what()});
+        dispatcher.publish(OrderRejectedEvent(id, params.trader_id, RejectionReason::OTHER, e.what()));
     }
     return id;
 }
@@ -85,20 +86,20 @@ void MatchingEngine::run_loop() {
 }
 
 void MatchingEngine::processOrderSubmission(std::unique_ptr<Order> order) {
-    if (order->getQuantity() == 0) {
-        dispatcher.publish(OrderRejectedEvent{order->getOrderID(), order->getTraderID(), RejectionReason::INVALID_QUANTITY, "Quantity must be positive."});
+    if (order->get_quantity() == 0) {
+        dispatcher.publish(OrderRejectedEvent(order->get_order_id(), order->get_trader_id(), RejectionReason::INVALID_QUANTITY, "Quantity must be positive."));
         return;
     }
 
-    if (order->getOrderType() == OrderType::STOP_MARKET) {
+    if (order->get_order_type() == OrderType::STOP_MARKET) {
         processStopMarketOrder(std::unique_ptr<StopMarketOrder>(static_cast<StopMarketOrder*>(order.release())));
         return;
-    } else if (order->getOrderType() == OrderType::STOP_LIMIT) {
+    } else if (order->get_order_type() == OrderType::STOP_LIMIT) {
         processStopLimitOrder(std::unique_ptr<StopLimitOrder>(static_cast<StopLimitOrder*>(order.release())));
         return;
     }
 
-    OrderBook* book = getOrCreateOrderBook(order->getSymbolID());
+    OrderBook* book = getOrCreateOrderBook(order->get_symbol_id());
 
     // Level 1/2 Feed Dissemination
     
@@ -117,43 +118,43 @@ void MatchingEngine::processOrderSubmission(std::unique_ptr<Order> order) {
                     (currentBestAsk.has_value() && (prevBestAsk->price != currentBestAsk->price || prevBestAsk->quantity != currentBestAsk->quantity));
 
     if (bidChanged || askChanged) {
-        dispatcher.publish(BookUpdateEvent{
-            order->getSymbolID(),
+        dispatcher.publish(BookUpdateEvent(
+            order->get_symbol_id(),
             currentBestBid.value_or(MarketData{0, 0}).price,
             currentBestBid.value_or(MarketData{0, 0}).quantity,
             currentBestAsk.value_or(MarketData{0, 0}).price,
             currentBestAsk.value_or(MarketData{0, 0}).quantity
-        });
+        ));
     }
 
-    if (order->getQuantity() > 0) {
-        if (order->getTimeInForce() == TimeInForce::IOC || order->getTimeInForce() == TimeInForce::FOK) {
-            order->setOrderStatus(OrderStatus::CANCELLED);
-            dispatcher.publish(OrderCancelledEvent{order->getSymbolID(), order->getOrderID(), order->getTraderID(), order->getQuantity()});
-        } else if (order->getOrderType() == OrderType::LIMIT) {
+    if (order->get_quantity() > 0) {
+        if (order->get_time_in_force() == TimeInForce::IOC || order->get_time_in_force() == TimeInForce::FOK) {
+            order->set_order_status(OrderStatus::CANCELLED);
+            dispatcher.publish(OrderCancelledEvent(order->get_symbol_id(), order->get_order_id(), order->get_trader_id(), order->get_quantity()));
+        } else if (order->get_order_type() == OrderType::LIMIT) {
            placeRestingLimitOrder(std::unique_ptr<LimitOrder>(static_cast<LimitOrder*>(order.release())), *book); 
         } else {
-            order->setOrderStatus(OrderStatus::CANCELLED);
-            dispatcher.publish(OrderCancelledEvent{order->getSymbolID(), order->getOrderID(), order->getTraderID(), order->getQuantity()});
+            order->set_order_status(OrderStatus::CANCELLED);
+            dispatcher.publish(OrderCancelledEvent(order->get_symbol_id(), order->get_order_id(), order->get_trader_id(), order->get_quantity()));
         }
     }
 }
 
 void MatchingEngine::processStopMarketOrder(std::unique_ptr<StopMarketOrder> order) {
     std::lock_guard<std::mutex> lock(stop_orders_mutex_);
-    if (order->getSide() == Side::BUY) {
-        stop_buy_orders_[order->getStopPrice()].push_back(order.release());
+    if (order->get_side() == Side::BUY) {
+        stop_buy_orders_[order->get_stop_price()].push_back(order.release());
     } else {
-        stop_sell_orders_[order->getStopPrice()].push_back(order.release());
+        stop_sell_orders_[order->get_stop_price()].push_back(order.release());
     }
 }
 
 void MatchingEngine::processStopLimitOrder(std::unique_ptr<StopLimitOrder> order) {
     std::lock_guard<std::mutex> lock(stop_orders_mutex_);
-    if (order->getSide() == Side::BUY) {
-        stop_buy_orders_[order->getStopPrice()].push_back(order.release());
+    if (order->get_side() == Side::BUY) {
+        stop_buy_orders_[order->get_stop_price()].push_back(order.release());
     } else {
-        stop_sell_orders_[order->getStopPrice()].push_back(order.release());
+        stop_sell_orders_[order->get_stop_price()].push_back(order.release());
     }
 }
 
@@ -174,11 +175,11 @@ void MatchingEngine::processOrderCancellation(OrderID orderID) {
     if (book) {
         Order* order = book->getOrder(orderID);
         if (order) {
-            traderID = order->getTraderID();
-            quantity = order->getQuantity();
+            traderID = order->get_trader_id();
+            quantity = order->get_quantity();
             try {
                 book->cancelOrder(orderID);
-                dispatcher.publish(OrderCancelledEvent{symbolID, orderID, traderID, quantity});
+                dispatcher.publish(OrderCancelledEvent(symbolID, orderID, traderID, quantity));
                 std::lock_guard<std::mutex> lock(order_map_mutex_);
                 orderID_to_symbol_.erase(orderID);
             } catch (const std::invalid_argument& e) {
@@ -189,71 +190,71 @@ void MatchingEngine::processOrderCancellation(OrderID orderID) {
 }
 
 void MatchingEngine::matchOrder(Order* incomingOrder, OrderBook& book) {
-    if (incomingOrder->getTimeInForce() == TimeInForce::FOK) {
+    if (incomingOrder->get_time_in_force() == TimeInForce::FOK) {
         Quantity availableQuantityAtBestPrice = 0;
-        if (incomingOrder->getSide() == Side::BUY) {
+        if (incomingOrder->get_side() == Side::BUY) {
             if (book.getBestAsk().has_value()) {
                 auto bestAsk = book.getBestAsk().value();
-                if (incomingOrder->getOrderType() == OrderType::MARKET || incomingOrder->getPrice() >= bestAsk.price) {
+                if (incomingOrder->get_order_type() == OrderType::MARKET || incomingOrder->get_price() >= bestAsk.price) {
                     availableQuantityAtBestPrice = bestAsk.quantity;
                 }
             }
-        } else { // incomingOrder->getSide() == Side::SELL
+        } else { // incomingOrder->get_side() == Side::SELL
             if (book.getBestBid().has_value()) {
                 auto bestBid = book.getBestBid().value();
-                if (incomingOrder->getOrderType() == OrderType::MARKET || incomingOrder->getPrice() <= bestBid.price) {
+                if (incomingOrder->get_order_type() == OrderType::MARKET || incomingOrder->get_price() <= bestBid.price) {
                     availableQuantityAtBestPrice = bestBid.quantity;
                 }
             }
         }
-        if (incomingOrder->getQuantity() > availableQuantityAtBestPrice) {
+        if (incomingOrder->get_quantity() > availableQuantityAtBestPrice) {
             return; // FOK order cannot be fully filled at best price, so it's rejected
         }
     }
 
-    while (incomingOrder->getQuantity() > 0) {
-        std::optional<MarketData> bestOpposingLevel = (incomingOrder->getSide() == Side::BUY) ? book.getBestAsk() : book.getBestBid();
+    while (incomingOrder->get_quantity() > 0) {
+        std::optional<MarketData> bestOpposingLevel = (incomingOrder->get_side() == Side::BUY) ? book.getBestAsk() : book.getBestBid();
         
         if (!bestOpposingLevel) break;
 
-        if (incomingOrder->getOrderType() == OrderType::LIMIT) {
+        if (incomingOrder->get_order_type() == OrderType::LIMIT) {
             auto limitOrder = static_cast<LimitOrder*>(incomingOrder);
-            Price limitPrice = limitOrder->getPrice();
+            Price limitPrice = limitOrder->get_price();
             Price bestOpposingPrice = bestOpposingLevel->price;
 
-            if (incomingOrder->getSide() == Side::BUY && limitPrice < bestOpposingPrice) break;
-            if (incomingOrder->getSide() == Side::SELL && limitPrice > bestOpposingPrice) break;
+            if (incomingOrder->get_side() == Side::BUY && limitPrice < bestOpposingPrice) break;
+            if (incomingOrder->get_side() == Side::SELL && limitPrice > bestOpposingPrice) break;
         }
         
         // Use the new callback-based forEachOrderAtPrice
         bool continueMatchingAtPriceLevel = book.forEachOrderAtPrice(bestOpposingLevel->price,
-            incomingOrder->getSide() == Side::BUY ? Side::SELL : Side::BUY,
+            incomingOrder->get_side() == Side::BUY ? Side::SELL : Side::BUY,
             [&](OrderID restingOrderID) {
                 Order* restingOrder = book.getOrder(restingOrderID); 
                 if (!restingOrder) return true; // Continue iteration if order not found
 
                 // Self Match Prevention
-                if (restingOrder->getTraderID() == incomingOrder->getTraderID()) {
-                    dispatcher.publish(OrderCancelledEvent{
-                        restingOrder->getSymbolID(),
+                if (restingOrder->get_trader_id() == incomingOrder->get_trader_id()) {
+                    dispatcher.publish(OrderCancelledEvent(
+                        restingOrder->get_symbol_id(),
                         restingOrderID,
-                        restingOrder->getTraderID(),
-                        restingOrder->getQuantity()
-                    });
+                        restingOrder->get_trader_id(),
+                        restingOrder->get_quantity()
+                    ));
 
                     book.cancelOrder(restingOrderID);
                     return true;
                 }
 
-                Quantity tradeQuantity = std::min(incomingOrder->getQuantity(), restingOrder->getQuantity());
-                Price tradePrice = restingOrder->getPrice();
+                Quantity tradeQuantity = std::min(incomingOrder->get_quantity(), restingOrder->get_quantity());
+                Price tradePrice = restingOrder->get_price();
 
                 createTrade(incomingOrder, restingOrder, tradePrice, tradeQuantity);
 
-                incomingOrder->setQuantity(incomingOrder->getQuantity() - tradeQuantity);
+                incomingOrder->set_quantity(incomingOrder->get_quantity() - tradeQuantity);
                 book.reduceOrderQuantity(restingOrderID, tradeQuantity); 
 
-                if (incomingOrder->getQuantity() == 0) {
+                if (incomingOrder->get_quantity() == 0) {
                     return false; // Aggressor fully filled, stop iterating orders at this price level
                 }
                 return true; // Continue iteration
@@ -265,29 +266,29 @@ void MatchingEngine::matchOrder(Order* incomingOrder, OrderBook& book) {
 }
 
 void MatchingEngine::placeRestingLimitOrder(std::unique_ptr<LimitOrder> order, OrderBook& book) {
-    order->setOrderStatus(OrderStatus::ACCEPTED);
-    dispatcher.publish(OrderAcceptedEvent{order->getSymbolID(), order->getOrderID(), order->getTraderID(), order->getSide(), order->getPrice(), order->getQuantity()});
+    order->set_order_status(OrderStatus::ACCEPTED);
+    dispatcher.publish(OrderAcceptedEvent(order->get_symbol_id(), order->get_order_id(), order->get_trader_id(), order->get_side(), order->get_price(), order->get_quantity()));
     book.addOrder(std::move(order));
 }
 
 void MatchingEngine::createTrade(Order* aggressor, Order* resting, Price tradePrice, Quantity tradeQuantity) {
 
-    Quantity aggressorRemaining = aggressor->getQuantity() - tradeQuantity;
-    Quantity restingRemaining = resting->getQuantity() - tradeQuantity;
-    aggressor->setOrderStatus(aggressorRemaining > 0 ? OrderStatus::PARTIALLY_FILLED : OrderStatus::FILLED);
-    resting->setOrderStatus(restingRemaining > 0 ? OrderStatus::PARTIALLY_FILLED : OrderStatus::FILLED);
+    Quantity aggressorRemaining = aggressor->get_quantity() - tradeQuantity;
+    Quantity restingRemaining = resting->get_quantity() - tradeQuantity;
+    aggressor->set_order_status(aggressorRemaining > 0 ? OrderStatus::PARTIALLY_FILLED : OrderStatus::FILLED);
+    resting->set_order_status(restingRemaining > 0 ? OrderStatus::PARTIALLY_FILLED : OrderStatus::FILLED);
     
-    dispatcher.publish(TradeExecutedEvent{aggressor->getSymbolID(), tradePrice, tradeQuantity, 
-        aggressor->getOrderID(), aggressor->getTraderID(), aggressor->getSide(), aggressor->getQuantity(), 
-        resting->getOrderID(), resting->getTraderID(), resting->getQuantity()});
+    dispatcher.publish(TradeExecutedEvent(aggressor->get_symbol_id(), tradePrice, tradeQuantity, 
+        aggressor->get_order_id(), aggressor->get_trader_id(), aggressor->get_side(), aggressor->get_quantity(), 
+        resting->get_order_id(), resting->get_trader_id(), resting->get_quantity()));
 
     if (aggressorRemaining == 0) {
         std::lock_guard<std::mutex> lock(order_map_mutex_);
-        orderID_to_symbol_.erase(aggressor->getOrderID());
+        orderID_to_symbol_.erase(aggressor->get_order_id());
     }
     if (restingRemaining == 0) {
         std::lock_guard<std::mutex> lock(order_map_mutex_);
-        orderID_to_symbol_.erase(resting->getOrderID());
+        orderID_to_symbol_.erase(resting->get_order_id());
     }
 
     triggerStopOrders(tradePrice);
@@ -299,10 +300,10 @@ void MatchingEngine::triggerStopOrders(Price lastTradePrice) {
     // Trigger buy stop orders
     for (auto it = stop_buy_orders_.begin(); it != stop_buy_orders_.end() && it->first <= lastTradePrice; ) {
         for (auto& order : it->second) {
-            if (order->getOrderType() == OrderType::STOP_MARKET) {
-                event_queue.push(std::make_unique<MarketOrder>(order->getSymbolID(), order->getOrderID(), order->getSide(), order->getQuantity(), order->getTraderID()));
-            } else if (order->getOrderType() == OrderType::STOP_LIMIT) {
-                event_queue.push(std::make_unique<LimitOrder>(order->getSymbolID(), order->getOrderID(), order->getSide(), order->getPrice(), order->getQuantity(), order->getTraderID()));
+            if (order->get_order_type() == OrderType::STOP_MARKET) {
+                event_queue.push(std::make_unique<MarketOrder>(order->get_symbol_id(), order->get_order_id(), order->get_side(), order->get_quantity(), order->get_trader_id()));
+            } else if (order->get_order_type() == OrderType::STOP_LIMIT) {
+                event_queue.push(std::make_unique<LimitOrder>(order->get_symbol_id(), order->get_order_id(), order->get_side(), order->get_price(), order->get_quantity(), order->get_trader_id()));
             }
         }
         it = stop_buy_orders_.erase(it);
@@ -313,10 +314,10 @@ void MatchingEngine::triggerStopOrders(Price lastTradePrice) {
 
     for (auto it = stop_sell_orders_.begin(); it != stop_sell_orders_.end() && it->first >= lastTradePrice; ) {
         for (auto& order : it->second) {
-            if (order->getOrderType() == OrderType::STOP_MARKET) {
-                event_queue.push(std::make_unique<MarketOrder>(order->getSymbolID(), order->getOrderID(), order->getSide(), order->getQuantity(), order->getTraderID()));
-            } else if (order->getOrderType() == OrderType::STOP_LIMIT) {
-                event_queue.push(std::make_unique<LimitOrder>(order->getSymbolID(), order->getOrderID(), order->getSide(), order->getPrice(), order->getQuantity(), order->getTraderID()));
+            if (order->get_order_type() == OrderType::STOP_MARKET) {
+                event_queue.push(std::make_unique<MarketOrder>(order->get_symbol_id(), order->get_order_id(), order->get_side(), order->get_quantity(), order->get_trader_id()));
+            } else if (order->get_order_type() == OrderType::STOP_LIMIT) {
+                event_queue.push(std::make_unique<LimitOrder>(order->get_symbol_id(), order->get_order_id(), order->get_side(), order->get_price(), order->get_quantity(), order->get_trader_id()));
             }
         }
         it = stop_sell_orders_.erase(it);
@@ -342,7 +343,7 @@ std::optional<MarketData> MatchingEngine::getBestBid(SymbolID symbolID) const {
 }
 
 void MatchingEngine::printTopOfBook(std::string symbol, int numPriceLevels) {
-    SymbolID symbolID = SymbolRegistry::getInstance().getID(symbol);
+    SymbolID symbolID = SymbolRegistry::get_instance().get_id(symbol);
     OrderBook* ob = getBook(symbolID);
     std::cout << std::endl << "\x1b[1m" << "\033[1;33m" << symbol << "\033[0m" 
     << " Top of Orderbook: " << "\x1b[0m" << std::endl;

@@ -62,5 +62,25 @@ TODO:
 - Optimizations for faster high frequency trading
 - examples of portfolio optimization and advanced trading strategies
 
+
+Currently refactored:
+- events.h
+- order.h
+- orderFactory.h
+- symbolRegistry.h
+- utils.h
+- orderFactory.cpp
+- symbolRegistry.cpp
+
+Need to refactor:
+- eventDispatcher.h
+- eventQueue.h
+- matchingEngine.h
+- orderBook.h
+- trader.h
+- matchingEngine.cpp
+- orderBook.cpp
+- all test files
+
 ## License
 This project is licensed under the MIT License - see the `License.md` file for details.

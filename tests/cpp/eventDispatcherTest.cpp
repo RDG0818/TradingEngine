@@ -9,7 +9,7 @@
 #include <thread>
 #include <atomic>
 #include <chrono>
-#include "trading_engine/eventDispatcher.h"
+#include "eventDispatcher.h"
 
 struct TestEventA {
     int value;

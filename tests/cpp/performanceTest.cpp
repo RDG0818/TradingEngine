@@ -1,9 +1,9 @@
 #include "benchmark/benchmark.h"
-#include "trading_engine/matchingEngine.h"
-#include "trading_engine/orderBook.h"
-#include "trading_engine/eventDispatcher.h"
-#include "trading_engine/symbolRegistry.h"
-#include "trading_engine/orderFactory.h"
+#include "matchingEngine.h"
+#include "orderBook.h"
+#include "eventDispatcher.h"
+#include "symbolRegistry.h"
+#include "orderFactory.h"
 #include <iostream>
 #include <vector>
 #include <thread>
@@ -42,13 +42,13 @@ BENCHMARK_F(BenchmarkFixture, BM_OrderLatency)(benchmark::State& state) {
         cv.notify_one();
     });
 
-    engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "102.00", .quantity = 50, .traderID = 999});
-    engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "101.50", .quantity = 200, .traderID = 999});
-    engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "101.00", .quantity = 100, .traderID = 999});
-    engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 1000000, .traderID = 999});
-    engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = "99.00", .quantity = 100, .traderID = 998});
-    engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = "98.50", .quantity = 200, .traderID = 998});
-    engine.submitOrder({.symbol = "LAT", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = "98.00", .quantity = 50, .traderID = 998});
+    engine.submitOrder({.symbol = "LAT", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "102.00", .quantity = 50, .trader_id = 999});
+    engine.submitOrder({.symbol = "LAT", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "101.50", .quantity = 200, .trader_id = 999});
+    engine.submitOrder({.symbol = "LAT", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "101.00", .quantity = 100, .trader_id = 999});
+    engine.submitOrder({.symbol = "LAT", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 1000000, .trader_id = 999});
+    engine.submitOrder({.symbol = "LAT", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "99.00", .quantity = 100, .trader_id = 998});
+    engine.submitOrder({.symbol = "LAT", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "98.50", .quantity = 200, .trader_id = 998});
+    engine.submitOrder({.symbol = "LAT", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "98.00", .quantity = 50, .trader_id = 998});
     
     std::this_thread::sleep_for(std::chrono::milliseconds(100)); 
 
@@ -60,7 +60,7 @@ BENCHMARK_F(BenchmarkFixture, BM_OrderLatency)(benchmark::State& state) {
         }
         state.ResumeTiming();
         
-        engine.submitOrder({.symbol = "LAT", .orderType = OrderType::MARKET, .side = Side::BUY, .quantity = 1, .traderID = 1});
+        engine.submitOrder({.symbol = "LAT", .order_type = OrderType::MARKET, .side = Side::BUY, .quantity = 1, .trader_id = 1});
 
         // Wait until the trade is executed
         {
@@ -82,9 +82,9 @@ static void BM_ThreadedThroughput(benchmark::State& state) {
         // Pre-fill the order book with depth to create a realistic market
         for (int i = 0; i < 10; ++i) {
             // Sell side (ask)
-            engine.submitOrder({.symbol = "THR_T", .orderType = OrderType::LIMIT, .side = Side::SELL, .price = std::to_string(100.01 + i * 0.01), .quantity = 100, .traderID = 999});
+            engine.submitOrder({.symbol = "THR_T", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = std::to_string(100.01 + i * 0.01), .quantity = 100, .trader_id = 999});
             // Buy side (bid)
-            engine.submitOrder({.symbol = "THR_T", .orderType = OrderType::LIMIT, .side = Side::BUY, .price = std::to_string(99.99 - i * 0.01), .quantity = 100, .traderID = 998});
+            engine.submitOrder({.symbol = "THR_T", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = std::to_string(99.99 - i * 0.01), .quantity = 100, .trader_id = 998});
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(200)); // Allow time for the order book to be built
     });
@@ -111,7 +111,7 @@ static void BM_ThreadedThroughput(benchmark::State& state) {
     // The timed loop: each thread executes this loop
     for (auto _ : state) {
         // This is the operation we want to measure the throughput of.
-        engine.submitOrder({.symbol = "THR_T", .orderType = OrderType::LIMIT, .side = side, .price = price_str, .quantity = 1, .traderID = trader_id});
+        engine.submitOrder({.symbol = "THR_T", .order_type = OrderType::LIMIT, .side = side, .price = price_str, .quantity = 1, .trader_id = trader_id});
     }
     
     // Tell the framework how many items this thread processed.
