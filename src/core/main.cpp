@@ -1,5 +1,6 @@
 #include "matchingEngine.h"
 #include "trader.h"
+#include "traderManager.h"
 #include <iostream>
 #include <signal.h>
 #include <atomic>
@@ -46,7 +47,7 @@ int main() {
 
     int i = 0;
     for (; i < numLiquidTraders; i++) {
-        auto liquidTrader = std::make_unique<LiquidityTrader>(
+        auto liquidTrader = std::make_unique<RandomMarketTrader>(
             engine,
             dispatcher,
             i, // TraderID
@@ -59,7 +60,7 @@ int main() {
     }
 
     for (; i < numLiquidTraders + numRandomTraders; i++) {
-        auto randomTrader = std::make_unique<RandomTrader>(
+        auto randomTrader = std::make_unique<RandomLimitTrader>(
             engine,
             dispatcher,
             i,
@@ -96,7 +97,7 @@ int main() {
     std::cout << "Press CTRL + C to end program.\n";
 
     while (isRunning) {
-        for (std::string sym : symbols) engine.printTopOfBook(sym, 5);
+        for (std::string sym : symbols) engine.print_top_of_book(sym, 5);
         std::this_thread::sleep_for(std::chrono::milliseconds(1000)); 
     }
 

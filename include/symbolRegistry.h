@@ -1,8 +1,5 @@
 // include/symbolRegistry.h
-/*
- * @file symbolRegistry.h
- * @brief Defines a thread-safe singleton for interning string symbols to integer IDs.
- */
+
 #ifndef TRADINGENGINE_INCLUDE_SYMBOLREGISTRY_H_
 #define TRADINGENGINE_INCLUDE_SYMBOLREGISTRY_H_
 

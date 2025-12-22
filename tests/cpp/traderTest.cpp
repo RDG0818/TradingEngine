@@ -1,184 +1,142 @@
-#include "trader.h"
-#include "gtest/gtest.h"
-#include "symbolRegistry.h"
-#include <memory>
+// tests/cpp/traderTest.cpp
+
+#include <string>
 #include <vector>
-#include <mutex>
-#include <iostream>
-#include <chrono>
-#include <unordered_map>
 
-// TODO: Add more robust test of each trader
+#include "gtest/gtest.h"
+#include "eventDispatcher.h"
+#include "matchingEngine.h"
+#include "symbolRegistry.h"
+#include "trader.h"
 
-class traderTest : public ::testing::Test {
-private:
-
-protected:
-
-    EventDispatcher dispatcher;
-    MatchingEngine engine;
-    std::chrono::milliseconds tickInterval = std::chrono::milliseconds(100);
-    TraderManager manager;
-    LiquidityTrader* liquidTrader_ptr = nullptr;
-    RandomTrader* randomTrader_ptr = nullptr;
-    MarketMakerTrader* marketMakerTrader_ptr = nullptr;
-
-    // Member variables to hold test results, moved from test body.
-    std::vector<TradeExecutedEvent> trade_events;
-    std::vector<OrderAcceptedEvent> accepted_events;
-    std::mutex events_mutex;
+class MockMatchingEngine : public MatchingEngine {
 
 public:
 
-    traderTest () : engine(dispatcher), manager(tickInterval) {};
+  using MatchingEngine::MatchingEngine;
 
-    void SetUp() override {
-        // Subscribe to events BEFORE starting the components that will generate them
-        // to prevent a race condition where events are published before subscription.
-        dispatcher.subscribe<TradeExecutedEvent>(
-            [&](const TradeExecutedEvent& event) {
-                std::lock_guard<std::mutex> lock(events_mutex);
-                // We only care about trades where our trader was the aggressor
-                if (liquidTrader_ptr && event.aggressing_trader_id == liquidTrader_ptr->getID()) {
-                    trade_events.push_back(event);
-                }
-            }
-        );
+  OrderID submit_order(const RawOrderParams& params) override {
+    submitted_orders.push_back(params);
+    return 1; // Return a dummy OrderID
+  }
 
-        dispatcher.subscribe<OrderAcceptedEvent>(
-            [&](const OrderAcceptedEvent& event) {
-                std::lock_guard<std::mutex> lock(events_mutex);
-                accepted_events.push_back(event);
-            }
-        );
+  std::optional<MarketData> get_best_bid(SymbolID symbol_id) const override {
+    return mock_best_bid;
+  }
 
-        engine.start();
-        std::this_thread::sleep_for(std::chrono::milliseconds(100)); 
+  std::optional<MarketData> get_best_ask(SymbolID symbol_id) const override {
+    return mock_best_ask;
+  }
 
-        engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 100000, .trader_id = 999});
-        engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "99.00", .quantity = 100000, .trader_id = 998});
-        engine.submitOrder({.symbol = "GOOG", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "50.00", .quantity = 100000, .trader_id = 997});
-        engine.submitOrder({.symbol = "GOOG", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "49.00", .quantity = 100000, .trader_id = 996});
-        // Use a high lambda to ensure orders are submitted quickly for a deterministic test.
-        auto liquidTrader = std::make_unique<LiquidityTrader>(
-            engine,
-            dispatcher,
-            0, // TraderID
-            1000.0,
-            tickInterval,
-            std::vector<std::string>{"AAPL", "GOOG"},
-            5 // Max quantity
-        );
-        liquidTrader_ptr = liquidTrader.get();
-        manager.addTrader(std::move(liquidTrader));
-        
-        auto randomTrader = std::make_unique<RandomTrader>(
-            engine,
-            dispatcher,
-            1,
-            10000.0,
-            tickInterval,
-            std::vector<std::string>{"AAPL", "GOOG"},
-            10,
-            0.05 // Normal Dist Variation
-        );
-        randomTrader_ptr = randomTrader.get();
-        manager.addTrader(std::move(randomTrader));
+  void set_mock_bbo(std::optional<MarketData> bid, std::optional<MarketData> ask) {
+    mock_best_bid = bid;
+    mock_best_ask = ask;
+  }
 
-        auto marketMakerTrader = std::make_unique<MarketMakerTrader>(
-            engine,
-            dispatcher,
-            2, // TraderID
-            std::vector<std::string>{"AAPL", "GOOG"},
-            0.0, // mu
-            0.1, // sigma
-            0.001, // spread
-            tickInterval,
-            10, // max quantity
-            std::unordered_map<std::string, double>{{"AAPL", 100.0}, {"GOOG", 50.0}} // initial prices
-        );
-        marketMakerTrader_ptr = marketMakerTrader.get();
-        manager.addTrader(std::move(marketMakerTrader));
-
-        // Start the manager AFTER subscribing.
-        manager.start();
-        
-        // Sleep to allow the system to warm up and process initial trades.
-        std::this_thread::sleep_for(std::chrono::milliseconds(10)); 
-    }
-
-    void TearDown() override {
-        manager.stop();
-        engine.stop();
-    }
+  std::vector<RawOrderParams> submitted_orders;
+  std::optional<MarketData> mock_best_bid;
+  std::optional<MarketData> mock_best_ask;
 };
 
-TEST_F(traderTest, LiquidityTraderSubmitsOrder) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+class TraderTest : public ::testing::Test {
 
-    manager.stop();
-    engine.stop(); 
+protected:
 
-    std::cout << "Received " << trade_events.size() << " TradeExecutedEvents from the LiquidityTrader." << std::endl;
+  EventDispatcher dispatcher;
+  MockMatchingEngine mock_engine;
+  
+  std::vector<std::string> symbols_ = {"AAPL", "GOOG"};
+  SymbolID aapl_id_ = SymbolRegistry::get_instance().get_id("AAPL");
+  SymbolID goog_id_ = SymbolRegistry::get_instance().get_id("GOOG");
 
-    ASSERT_FALSE(trade_events.empty()) << "No trades were executed by the LiquidityTrader.";
+  TraderTest() : mock_engine(dispatcher) {}
+};
 
-    // Optional: further checks on the trade event
-    const auto& first_trade = trade_events.front();
-    ASSERT_EQ(first_trade.aggressing_trader_id, liquidTrader_ptr->getID());
+// --- Test Cases ---
+
+TEST_F(TraderTest, RandomMarketTrader_SubmitsMarketOrder) {
+  float lambda = 10.0; 
+  auto time_delta = std::chrono::seconds(1);
+  RandomMarketTrader trader(mock_engine, dispatcher, 1, lambda, time_delta, symbols_, 5);
+
+  trader.tick();
+
+  ASSERT_GE(mock_engine.submitted_orders.size(), 1);
+  const auto& order = mock_engine.submitted_orders.front();
+  EXPECT_EQ(order.trader_id, 1);
+  EXPECT_EQ(order.order_type, OrderType::MARKET);
+}
+
+TEST_F(TraderTest, RandomLimitTrader_SubmitsLimitOrder) {
+  float lambda = 10.0;
+  auto time_delta = std::chrono::seconds(1);
+  RandomLimitTrader trader(mock_engine, dispatcher, 2, lambda, time_delta, symbols_, 10, 0.05);
+
+  // Set a mock book where the best bid is 100.00
+  mock_engine.set_mock_bbo(MarketData{1000000, 100}, MarketData{1010000, 100});
+
+  trader.tick();
+
+  ASSERT_GE(mock_engine.submitted_orders.size(), 1);
+  const auto& order = mock_engine.submitted_orders.front();
+  EXPECT_EQ(order.trader_id, 2);
+  EXPECT_EQ(order.order_type, OrderType::LIMIT);
+  EXPECT_FALSE(order.price.empty()); // Price should not be empty for a limit order.
+}
+
+TEST_F(TraderTest, MarketMakerTrader_QuotesBidAndAsk) {
+  auto time_delta = std::chrono::milliseconds(100);
+  std::unordered_map<std::string, double> initial_prices = {{"AAPL", 150.0}};
+  MarketMakerTrader trader(mock_engine, dispatcher, 3, {"AAPL"}, 0.0, 0.01, 0.01, time_delta, 10, initial_prices);
+
+  trader.tick();
+
+  ASSERT_EQ(mock_engine.submitted_orders.size(), 2);
+  const auto& order1 = mock_engine.submitted_orders[0];
+  const auto& order2 = mock_engine.submitted_orders[1];
+
+  EXPECT_EQ(order1.trader_id, 3);
+  EXPECT_EQ(order2.trader_id, 3);
+
+  EXPECT_TRUE((order1.side == Side::BUY && order2.side == Side::SELL) || (order1.side == Side::SELL && order2.side == Side::BUY));
     
-    SymbolID aapl_id = SymbolRegistry::get_instance().get_id("AAPL");
-    SymbolID goog_id = SymbolRegistry::get_instance().get_id("GOOG");
+  // Prices should be based on the fair price (150.0) and spread (0.01)
+  // Bid should be ~150 * (1 - 0.01) = 148.5
+  // Ask should be ~150 * (1 + 0.01) = 151.5
+  Price expected_bid = 1485000;
+  Price expected_ask = 1515000;
 
-    ASSERT_TRUE(first_trade.symbol_id == aapl_id || first_trade.symbol_id == goog_id)
-        << "Trade was not for an expected symbol.";
+  Price actual_bid = (order1.side == Side::BUY) ? std::stoull(order1.price) * 10000 : std::stoull(order2.price) * 10000;
+  Price actual_ask = (order1.side == Side::SELL) ? std::stoull(order1.price) * 10000 : std::stoull(order2.price) * 10000;
+
+  EXPECT_NEAR(actual_bid, expected_bid, 5000); // Allow 0.5 price deviation
+  EXPECT_NEAR(actual_ask, expected_ask, 5000); // Allow 0.5 price deviation
 }
 
-TEST_F(traderTest, RandomTraderSubmitsOrder) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+TEST_F(TraderTest, MarketMakerTrader_AdjustsToMarket) {
+  auto time_delta = std::chrono::milliseconds(100);
+  std::unordered_map<std::string, double> initial_prices = {{"AAPL", 150.0}};
+  MarketMakerTrader trader(mock_engine, dispatcher, 3, {"AAPL"}, 0.0, 0.01, 0.01, time_delta, 10, initial_prices);
 
-    int num_accepted_events = 0;
-    for (auto event : accepted_events) {
-        if (event.trader_id == 1) {// RandomTrader's ID
-            num_accepted_events++;
-        }
-    }
+  mock_engine.set_mock_bbo(MarketData{1990000, 100}, MarketData{2010000, 100});
 
-    std::cout << "Received " << num_accepted_events << " OrderAcceptedEvents from the RandomTrader." << std::endl;
-    ASSERT_FALSE(num_accepted_events == 0) << "No trades were executed by the RandomTrader.";
+  trader.tick();
 
-    engine.printTopOfBook("AAPL", 10);
-    engine.printTopOfBook("GOOG", 10);
+  ASSERT_EQ(mock_engine.submitted_orders.size(), 2);
+  const auto& order1 = mock_engine.submitted_orders[0];
+  const auto& order2 = mock_engine.submitted_orders[1];
 
-}
+  // New fair price is (199+201)/2 = 200.
+  // Bid should be ~200 * (1 - 0.01) = 198
+  // Ask should be ~200 * (1 + 0.01) = 202
+  Price expected_bid = 1980000;
+  Price expected_ask = 2020000;
+  
+  Price actual_bid = (order1.side == Side::BUY) ? std::stoull(order1.price) * 10000 : std::stoull(order2.price) * 10000;
+  Price actual_ask = (order1.side == Side::SELL) ? std::stoull(order1.price) * 10000 : std::stoull(order2.price) * 10000;
 
-TEST_F(traderTest, MarketMakerTraderSubmitsOrders) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-    manager.stop();
-    engine.stop();
-
-    int mm_accepted_orders = 0;
-    bool found_buy = false;
-    bool found_sell = false;
-    for (const auto& event : accepted_events) {
-        if (event.trader_id == marketMakerTrader_ptr->getID()) {
-            mm_accepted_orders++;
-            if (event.side == Side::BUY) {
-                found_buy = true;
-            }
-            if (event.side == Side::SELL) {
-                found_sell = true;
-            }
-        }
-    }
-
-    std::cout << "Received " << mm_accepted_orders << " OrderAcceptedEvents from the MarketMakerTrader." << std::endl;
-    ASSERT_GT(mm_accepted_orders, 0) << "MarketMakerTrader did not submit any orders.";
-    ASSERT_TRUE(found_buy) << "MarketMakerTrader did not submit any BUY orders.";
-    ASSERT_TRUE(found_sell) << "MarketMakerTrader did not submit any SELL orders.";
-
-    engine.printTopOfBook("AAPL", 10);
-    engine.printTopOfBook("GOOG", 10);
+  // Allow for small deviation
+  EXPECT_NEAR(actual_bid, expected_bid, 5000);
+  EXPECT_NEAR(actual_ask, expected_ask, 5000);
 }
 

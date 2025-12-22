@@ -1,3 +1,5 @@
+// tests/cpp/matchingEngineTest.cpp
+
 #include "gtest/gtest.h"
 #include "matchingEngine.h"
 #include "orderBook.h"
@@ -83,7 +85,7 @@ private:
     std::vector<OrderRejectedEvent> rejections;
 };
 
-class MatchingEngineTestV2 : public ::testing::Test {
+class MatchingEngineTest : public ::testing::Test {
 protected:
     EventDispatcher dispatcher;
     MatchingEngine engine;
@@ -91,7 +93,7 @@ protected:
     SymbolID aapl_id;
     SymbolID goog_id;
 
-    MatchingEngineTestV2() : engine(dispatcher) {}
+    MatchingEngineTest() : engine(dispatcher) {}
 
     void SetUp() override {
         listener.subscribe(dispatcher);
@@ -105,8 +107,8 @@ protected:
     }
 };
 
-TEST_F(MatchingEngineTestV2, SubmitLimitOrder_NoMatch_RestsOnBook) {
-    OrderID orderID = engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 10, .trader_id = 1});
+TEST_F(MatchingEngineTest, SubmitLimitOrder_NoMatch_RestsOnBook) {
+    OrderID orderID = engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 10, .trader_id = 1});
     
     listener.waitForEvents(0, 0, 1, 0);
 
@@ -114,17 +116,17 @@ TEST_F(MatchingEngineTestV2, SubmitLimitOrder_NoMatch_RestsOnBook) {
     ASSERT_EQ(acceptances.size(), 1);
     EXPECT_EQ(acceptances[0].order_id, orderID);
 
-    OrderBook* book = engine.getBook(aapl_id);
+    OrderBook* book = engine.get_book(aapl_id);
     ASSERT_NE(book, nullptr);
-    auto bestBid = book->getBestBid();
+    auto bestBid = book->get_best_bid();
     ASSERT_TRUE(bestBid.has_value());
     EXPECT_EQ(bestBid->price, 1000000);
     EXPECT_EQ(bestBid->quantity, 10);
     EXPECT_TRUE(listener.getTrades().empty());
 }
 
-TEST_F(MatchingEngineTestV2, SubmitInvalidOrder_Rejects) {
-    OrderID orderID = engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 0, .trader_id = 1});
+TEST_F(MatchingEngineTest, SubmitInvalidOrder_Rejects) {
+    OrderID orderID = engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 0, .trader_id = 1});
 
     listener.waitForEvents(0, 0, 0, 1);
 
@@ -134,11 +136,11 @@ TEST_F(MatchingEngineTestV2, SubmitInvalidOrder_Rejects) {
     EXPECT_EQ(rejections[0].reason, RejectionReason::INVALID_QUANTITY);
 }
 
-TEST_F(MatchingEngineTestV2, SubmitLimitOrders_FullMatch) {
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 10, .trader_id = 1});
+TEST_F(MatchingEngineTest, SubmitLimitOrders_FullMatch) {
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 10, .trader_id = 1});
     listener.waitForEvents(0, 0, 1, 0);
 
-    OrderID aggressingID = engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 10, .trader_id = 2});
+    OrderID aggressingID = engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 10, .trader_id = 2});
 
     listener.waitForEvents(1, 0, 1, 0);
 
@@ -148,16 +150,16 @@ TEST_F(MatchingEngineTestV2, SubmitLimitOrders_FullMatch) {
     EXPECT_EQ(trades[0].quantity, 10);
     EXPECT_EQ(trades[0].aggressing_order_id, aggressingID);
 
-    OrderBook* book = engine.getBook(aapl_id);
+    OrderBook* book = engine.get_book(aapl_id);
     ASSERT_NE(book, nullptr);
-    EXPECT_TRUE(book->isEmpty());
+    EXPECT_TRUE(book->is_empty());
 }
 
-TEST_F(MatchingEngineTestV2, SubmitLimitOrder_PartialMatch_RestsOnBook) {
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 5, .trader_id = 1});
+TEST_F(MatchingEngineTest, SubmitLimitOrder_PartialMatch_RestsOnBook) {
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 5, .trader_id = 1});
     listener.waitForEvents(0, 0, 1, 0);
 
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 10, .trader_id = 2});
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 10, .trader_id = 2});
 
     listener.waitForEvents(1, 0, 2, 0);
 
@@ -165,19 +167,19 @@ TEST_F(MatchingEngineTestV2, SubmitLimitOrder_PartialMatch_RestsOnBook) {
     ASSERT_EQ(trades.size(), 1);
     EXPECT_EQ(trades[0].quantity, 5);
 
-    OrderBook* book = engine.getBook(aapl_id);
+    OrderBook* book = engine.get_book(aapl_id);
     ASSERT_NE(book, nullptr);
-    auto bestBid = book->getBestBid();
+    auto bestBid = book->get_best_bid();
     ASSERT_TRUE(bestBid.has_value());
     EXPECT_EQ(bestBid->price, 1000000);
     EXPECT_EQ(bestBid->quantity, 5);
 }
 
-TEST_F(MatchingEngineTestV2, SubmitMarketOrder_FullMatch) {
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 10, .trader_id = 1});
+TEST_F(MatchingEngineTest, SubmitMarketOrder_FullMatch) {
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 10, .trader_id = 1});
     listener.waitForEvents(0, 0, 1, 0);
 
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::MARKET, .side = Side::BUY, .price = "", .quantity = 10, .trader_id = 2});
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::MARKET, .side = Side::BUY, .price = "", .quantity = 10, .trader_id = 2});
 
     listener.waitForEvents(1, 0, 1, 0);
 
@@ -185,16 +187,16 @@ TEST_F(MatchingEngineTestV2, SubmitMarketOrder_FullMatch) {
     ASSERT_EQ(trades.size(), 1);
     EXPECT_EQ(trades[0].quantity, 10);
 
-    OrderBook* book = engine.getBook(aapl_id);
+    OrderBook* book = engine.get_book(aapl_id);
     ASSERT_NE(book, nullptr);
-    EXPECT_TRUE(book->isEmpty());
+    EXPECT_TRUE(book->is_empty());
 }
 
-TEST_F(MatchingEngineTestV2, SubmitMarketOrder_PartialMatch_RemainderCancelled) {
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 5, .trader_id = 1});
+TEST_F(MatchingEngineTest, SubmitMarketOrder_PartialMatch_RemainderCancelled) {
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 5, .trader_id = 1});
     listener.waitForEvents(0, 0, 1, 0);
 
-    OrderID marketOrderID = engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::MARKET, .side = Side::BUY, .price = "", .quantity = 10, .trader_id = 2});
+    OrderID marketOrderID = engine.submit_order({.symbol = "AAPL", .order_type = OrderType::MARKET, .side = Side::BUY, .price = "", .quantity = 10, .trader_id = 2});
 
     listener.waitForEvents(1, 1, 1, 0);
 
@@ -207,16 +209,16 @@ TEST_F(MatchingEngineTestV2, SubmitMarketOrder_PartialMatch_RemainderCancelled) 
     EXPECT_EQ(cancellations[0].order_id, marketOrderID);
     EXPECT_EQ(cancellations[0].quantity, 5);
 
-    OrderBook* book = engine.getBook(aapl_id);
+    OrderBook* book = engine.get_book(aapl_id);
     ASSERT_NE(book, nullptr);
-    EXPECT_TRUE(book->isEmpty());
+    EXPECT_TRUE(book->is_empty());
 }
 
-TEST_F(MatchingEngineTestV2, CancelOrder_RemovesFromBook) {
-    OrderID orderToCancel = engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "99.00", .quantity = 10, .trader_id = 1});
+TEST_F(MatchingEngineTest, CancelOrder_RemovesFromBook) {
+    OrderID orderToCancel = engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "99.00", .quantity = 10, .trader_id = 1});
     listener.waitForEvents(0, 0, 1, 0);
 
-    engine.cancelOrder(orderToCancel);
+    engine.cancel_order(orderToCancel);
 
     listener.waitForEvents(0, 1, 1, 0);
 
@@ -224,18 +226,18 @@ TEST_F(MatchingEngineTestV2, CancelOrder_RemovesFromBook) {
     ASSERT_EQ(cancellations.size(), 1);
     EXPECT_EQ(cancellations[0].order_id, orderToCancel);
 
-    OrderBook* book = engine.getBook(aapl_id);
+    OrderBook* book = engine.get_book(aapl_id);
     ASSERT_NE(book, nullptr);
-    EXPECT_TRUE(book->isSideEmpty(Side::BUY));
+    EXPECT_TRUE(book->is_side_empty(Side::BUY));
 }
 
-TEST_F(MatchingEngineTestV2, PriceTimePriority_IsRespected) {
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "101.00", .quantity = 5, .trader_id = 1});
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 5, .trader_id = 2});
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 5, .trader_id = 3});
+TEST_F(MatchingEngineTest, PriceTimePriority_IsRespected) {
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "101.00", .quantity = 5, .trader_id = 1});
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 5, .trader_id = 2});
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 5, .trader_id = 3});
     listener.waitForEvents(0, 0, 3, 0);
 
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "101.00", .quantity = 12, .trader_id = 4});
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "101.00", .quantity = 12, .trader_id = 4});
 
     listener.waitForEvents(3, 0, 3, 0);
 
@@ -257,33 +259,33 @@ TEST_F(MatchingEngineTestV2, PriceTimePriority_IsRespected) {
     EXPECT_EQ(trades[2].quantity, 2);
     EXPECT_EQ(trades[2].resting_trader_id, 1);
 
-    OrderBook* book = engine.getBook(aapl_id);
+    OrderBook* book = engine.get_book(aapl_id);
     ASSERT_NE(book, nullptr);
-    auto bestAsk = book->getBestAsk();
+    auto bestAsk = book->get_best_ask();
     ASSERT_TRUE(bestAsk.has_value());
     EXPECT_EQ(bestAsk->price, 1010000);
     EXPECT_EQ(bestAsk->quantity, 3);
 }
 
-TEST_F(MatchingEngineTestV2, StopMarketOrder_TriggersAndFills) {
+TEST_F(MatchingEngineTest, StopMarketOrder_TriggersAndFills) {
     // Resting sell order
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "105.00", .quantity = 10, .trader_id = 1});
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "105.00", .quantity = 10, .trader_id = 1});
     listener.waitForEvents(0, 0, 1, 0);
 
     // Buy stop order, should trigger when price goes >= 100.00
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::STOP_MARKET, .side = Side::BUY, .stop_price = "100.00", .quantity = 10, .trader_id = 2});
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::STOP_MARKET, .side = Side::BUY, .stop_price = "100.00", .quantity = 10, .trader_id = 2});
 
     // A trade that should not trigger the stop
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "99.00", .quantity = 1, .trader_id = 3});
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "99.00", .quantity = 1, .trader_id = 3});
     listener.waitForEvents(0, 0, 2, 0);
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "99.00", .quantity = 1, .trader_id = 4});
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "99.00", .quantity = 1, .trader_id = 4});
     listener.waitForEvents(1, 0, 2, 0);
     EXPECT_EQ(listener.getTrades().size(), 1);
 
     // This trade should trigger the stop order
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 5, .trader_id = 5});
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 5, .trader_id = 5});
     listener.waitForEvents(1, 0, 3, 0);
-    OrderID aggressingID = engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 5, .trader_id = 6});
+    OrderID aggressingID = engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 5, .trader_id = 6});
     
     listener.waitForEvents(3, 0, 3, 0);
 
@@ -295,29 +297,29 @@ TEST_F(MatchingEngineTestV2, StopMarketOrder_TriggersAndFills) {
     EXPECT_EQ(trades[2].quantity, 10);
 }
 
-TEST_F(MatchingEngineTestV2, StopLimitOrder_TriggersAndRests) {
+TEST_F(MatchingEngineTest, StopLimitOrder_TriggersAndRests) {
     // Buy stop limit order, should trigger when price goes >= 100.00 and then rest as a limit order at 101.00
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::STOP_LIMIT, .side = Side::BUY, .price = "101.00", .stop_price = "100.00", .quantity = 10, .trader_id = 1});
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::STOP_LIMIT, .side = Side::BUY, .price = "101.00", .stop_price = "100.00", .quantity = 10, .trader_id = 1});
 
     // This trade should trigger the stop order
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 5, .trader_id = 2});
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 5, .trader_id = 2});
     listener.waitForEvents(0, 0, 1, 0);
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 5, .trader_id = 3});
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 5, .trader_id = 3});
     
     listener.waitForEvents(1, 0, 2, 0);
 
-    OrderBook* book = engine.getBook(aapl_id);
+    OrderBook* book = engine.get_book(aapl_id);
     ASSERT_NE(book, nullptr);
-    auto bestBid = book->getBestBid();
+    auto bestBid = book->get_best_bid();
     ASSERT_TRUE(bestBid.has_value());
     EXPECT_EQ(bestBid->price, 1010000);
     EXPECT_EQ(bestBid->quantity, 10);
 }
 
-TEST_F(MatchingEngineTestV2, LimitOrderIOC_PartialFill_CancelsRemainder) {
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 5, .trader_id = 1});
+TEST_F(MatchingEngineTest, LimitOrderIOC_PartialFill_CancelsRemainder) {
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 5, .trader_id = 1});
     listener.waitForEvents(0, 0, 1, 0);
-    OrderID iocOrderID = engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 10, .trader_id = 2, .time_in_force = TimeInForce::IOC});
+    OrderID iocOrderID = engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 10, .trader_id = 2, .time_in_force = TimeInForce::IOC});
 
     listener.waitForEvents(1, 1, 1, 0);
 
@@ -330,15 +332,15 @@ TEST_F(MatchingEngineTestV2, LimitOrderIOC_PartialFill_CancelsRemainder) {
     EXPECT_EQ(cancellations[0].order_id, iocOrderID);
     EXPECT_EQ(cancellations[0].quantity, 5);
 
-    OrderBook* book = engine.getBook(aapl_id);
+    OrderBook* book = engine.get_book(aapl_id);
     ASSERT_NE(book, nullptr);
-    EXPECT_TRUE(book->isEmpty());
+    EXPECT_TRUE(book->is_empty());
 }
 
-TEST_F(MatchingEngineTestV2, LimitOrderFOK_FullFill_Executes) {
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 10, .trader_id = 1});
+TEST_F(MatchingEngineTest, LimitOrderFOK_FullFill_Executes) {
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 10, .trader_id = 1});
     listener.waitForEvents(0, 0, 1, 0);
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 10, .trader_id = 2, .time_in_force = TimeInForce::FOK});
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 10, .trader_id = 2, .time_in_force = TimeInForce::FOK});
 
     listener.waitForEvents(1, 0, 1, 0);
 
@@ -346,15 +348,15 @@ TEST_F(MatchingEngineTestV2, LimitOrderFOK_FullFill_Executes) {
     ASSERT_EQ(trades.size(), 1);
     EXPECT_EQ(trades[0].quantity, 10);
 
-    OrderBook* book = engine.getBook(aapl_id);
+    OrderBook* book = engine.get_book(aapl_id);
     ASSERT_NE(book, nullptr);
-    EXPECT_TRUE(book->isEmpty());
+    EXPECT_TRUE(book->is_empty());
 }
 
-TEST_F(MatchingEngineTestV2, LimitOrderFOK_PartialFill_Cancels) {
-    engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 5, .trader_id = 1});
+TEST_F(MatchingEngineTest, LimitOrderFOK_PartialFill_Cancels) {
+    engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 5, .trader_id = 1});
     listener.waitForEvents(0, 0, 1, 0);
-    OrderID fokOrderID = engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 10, .trader_id = 2, .time_in_force = TimeInForce::FOK});
+    OrderID fokOrderID = engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 10, .trader_id = 2, .time_in_force = TimeInForce::FOK});
 
     listener.waitForEvents(0, 1, 1, 0);
 
@@ -365,22 +367,22 @@ TEST_F(MatchingEngineTestV2, LimitOrderFOK_PartialFill_Cancels) {
     EXPECT_EQ(cancellations[0].order_id, fokOrderID);
     EXPECT_EQ(cancellations[0].quantity, 10);
 
-    OrderBook* book = engine.getBook(aapl_id);
+    OrderBook* book = engine.get_book(aapl_id);
     ASSERT_NE(book, nullptr);
-    auto bestAsk = book->getBestAsk();
+    auto bestAsk = book->get_best_ask();
     ASSERT_TRUE(bestAsk.has_value());
     EXPECT_EQ(bestAsk->price, 1000000);
     EXPECT_EQ(bestAsk->quantity, 5);
 }
 
-TEST_F(MatchingEngineTestV2, SelfMatchPrevention_RestingOrderCancelled) {
+TEST_F(MatchingEngineTest, SelfMatchPrevention_RestingOrderCancelled) {
     // Trader 1 places a SELL limit order
-    OrderID restingSellOrderID = engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 10, .trader_id = 1});
+    OrderID restingSellOrderID = engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "100.00", .quantity = 10, .trader_id = 1});
     listener.waitForEvents(0, 0, 1, 0);
     listener.clear(); // Clear events to only capture new events
 
     // Trader 1 places a BUY limit order at the same price (should trigger self-match prevention)
-    OrderID incomingBuyOrderID = engine.submitOrder({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 10, .trader_id = 1});
+    OrderID incomingBuyOrderID = engine.submit_order({.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "100.00", .quantity = 10, .trader_id = 1});
     
     // Expect 1 cancellation (resting sell order) and 1 acceptance (incoming buy order)
     listener.waitForEvents(0, 1, 1, 0); 
@@ -402,11 +404,11 @@ TEST_F(MatchingEngineTestV2, SelfMatchPrevention_RestingOrderCancelled) {
     EXPECT_EQ(acceptances[0].trader_id, 1);
 
     // Verify the incoming buy order is now resting on the book
-    OrderBook* book = engine.getBook(aapl_id);
+    OrderBook* book = engine.get_book(aapl_id);
     ASSERT_NE(book, nullptr);
-    auto bestBid = book->getBestBid();
+    auto bestBid = book->get_best_bid();
     ASSERT_TRUE(bestBid.has_value());
     EXPECT_EQ(bestBid->price, 1000000);
     EXPECT_EQ(bestBid->quantity, 10);
-    EXPECT_TRUE(book->isSideEmpty(Side::SELL)); // The sell side should be empty as the resting order was cancelled
+    EXPECT_TRUE(book->is_side_empty(Side::SELL)); // The sell side should be empty as the resting order was cancelled
 }

@@ -65,21 +65,22 @@ TODO:
 
 Currently refactored:
 - events.h
+- eventDispatcher.h
+- eventQueue.h
 - order.h
 - orderFactory.h
 - symbolRegistry.h
 - utils.h
+- orderBook.h
+- orderBook.cpp
 - orderFactory.cpp
 - symbolRegistry.cpp
+- eventDispatcherTest.cpp
 
 Need to refactor:
-- eventDispatcher.h
-- eventQueue.h
 - matchingEngine.h
-- orderBook.h
 - trader.h
 - matchingEngine.cpp
-- orderBook.cpp
 - all test files
 
 ## License

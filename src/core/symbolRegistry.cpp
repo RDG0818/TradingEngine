@@ -1,4 +1,5 @@
 // src/core/symbolRegistry.cpp
+
 #include <stdexcept>
 
 #include "symbolRegistry.h"

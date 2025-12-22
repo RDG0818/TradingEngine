@@ -54,7 +54,20 @@ enum class TimeInForce : std::uint8_t {
   FOK
 };
 
+#include <iomanip>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+
 // Utility Functions
+
+inline std::string format_price(Price price_int) {
+    if (price_int == 0) return "0.0000";
+    std::stringstream ss;
+    ss << price_int / 10000 << '.' 
+        << std::setw(4) << std::setfill('0') << price_int % 10000;
+    return ss.str();
+}
 
 inline std::string ToString(Side side) {
     switch (side) {

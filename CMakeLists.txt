@@ -5,7 +5,6 @@ project(TradingEngine VERSION 1.0)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(CMAKE_BUILD_TYPE Release)
 
 if (CMAKE_BUILD_TYPE MATCHES "Release")
     add_compile_options(-march=native)

@@ -1,47 +1,70 @@
-#pragma once
+// include/eventDispatcher.h
+
+#ifndef TRADINGENGINE_INCLUDE_EVENTDISPATCHER_H_
+#define TRADINGENGINE_INCLUDE_EVENTDISPATCHER_H_
 
 #include <functional>
+#include <iostream>
+#include <memory>
+#include <mutex>
+#include <shared_mutex>
+#include <typeindex>
 #include <unordered_map>
 #include <vector>
-#include <any>
-#include <typeindex>
-#include <iostream>
-#include <mutex>
 
+#include "events.h" 
 
+// TODO: Implement an unsubscribe mechanism, likely by having subscribe()
+//               return a handle/ID that can be used to remove the callback.
+// TODO: Consider using Boost.Signals2
 class EventDispatcher {
 private:
-    std::mutex mtx;
-    std::unordered_map<std::type_index, std::vector<std::function<void(const std::any&)>>> subscribers;
+  mutable std::shared_mutex mtx_;
+  std::unordered_map<std::type_index, std::vector<std::function<void(const BaseEvent&)>>> subscribers_;
 
 public:
-    template<typename TEvent>
-    void subscribe(std::function<void(const TEvent&)> callback) {
-        std::lock_guard<std::mutex> lock(mtx);
-        auto typeIndex = std::type_index(typeid(TEvent));
+  template<typename TEvent>
+  void subscribe(std::function<void(const TEvent&)> callback) {
+    static_assert(std::is_base_of<BaseEvent, TEvent>::value, 
+                  "TEvent must be a derivative of BaseEvent.");
 
-        auto wrapper = [callback](const std::any& event) {
-            callback(std::any_cast<const TEvent&>(event));
-        };
+    auto type_index = std::type_index(typeid(TEvent));
 
-        subscribers[typeIndex].push_back(wrapper);
+    auto wrapper_callback = [callback](const BaseEvent& event) {
+      if (const auto* derived = dynamic_cast<const TEvent*>(&event)) {
+        callback(*derived);
+      }
+    };
+
+    std::unique_lock<std::shared_mutex> lock(mtx_);
+    subscribers_[type_index].push_back(wrapper_callback);
+  }
+
+  void publish(const BaseEvent& event) {
+    auto type_index = std::type_index(typeid(event));
+    std::vector<std::function<void(const BaseEvent&)>> callbacks_to_run;
+
+    {
+      std::shared_lock<std::shared_mutex> lock(mtx_);
+      auto it = subscribers_.find(type_index);
+      if (it != subscribers_.end()) {
+        callbacks_to_run = it->second;
+      }
     }
 
-   template<typename TEvent>
-    void publish(const TEvent& event) { // TODO: Make asynchronous
-        auto typeIndex = std::type_index(typeid(TEvent));
-        std::vector<std::function<void(const std::any&)>> callbacks;
-
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            if (subscribers.count(typeIndex)) {
-                callbacks = subscribers.at(typeIndex);
-            }
-        }
-        for (const auto& callback : callbacks) {
-           try {callback(event);}
-           catch (const std::exception& e) {std::cerr << "Exception in event subscriber: " << e.what() << std::endl;}
-        }
+    for (const auto& callback : callbacks_to_run) {
+      try {
+        callback(event);
+      }
+      catch (const std::bad_cast& e) {
+        std::cerr << "Exception in event subscriber (bad_cast): " << e.what() << std::endl;
+      }
+      catch (const std::exception& e) {
+        std::cerr << "Exception in event subscriber: " << e.what() << std::endl;
+      }
     }
+  }
 };
+
+#endif // TRADINGENGINE_INCLUDE_EVENTDISPATCHER_H_
 

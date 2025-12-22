@@ -1,133 +1,133 @@
-#include "gtest/gtest.h"
-#include <functional>
-#include <unordered_map>
-#include <vector>
-#include <any>
-#include <typeindex>
-#include <iostream>
-#include <mutex>
-#include <thread>
-#include <atomic>
-#include <chrono>
-#include "eventDispatcher.h"
+// tests/cpp/eventDispatcherTest.cpp
 
-struct TestEventA {
-    int value;
+#include <atomic>
+#include <functional>
+#include <iostream>
+#include <string>
+#include <thread>
+#include <vector>
+
+#include "eventDispatcher.h"
+#include "events.h" 
+#include "gtest/gtest.h"
+
+struct TestEventA : public BaseEvent {
+  int value;
+  TestEventA(int value) : value(value) {};
 };
 
-struct TestEventB {
-    std::string message;
+struct TestEventB : public BaseEvent {
+  std::string message;
+  TestEventB(std::string message) : message(message) {};
 };
 
 class EventDispatcherTest : public ::testing::Test {
 protected:
-    EventDispatcher dispatcher;
+  EventDispatcher dispatcher;
 };
 
 
 // Test Cases 
 
-TEST_F(EventDispatcherTest, BasicSubscribeAndPublish) {
-    int receivedValue = 0;
-    dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
-        receivedValue = event.value;
-    });
+TEST_F(EventDispatcherTest, SubscribeAndPublishSingleEvent) {
+  int receivedValue = 0;
+  dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
+    receivedValue = event.value;
+  });
 
-    dispatcher.publish(TestEventA{42});
+  dispatcher.publish(TestEventA(42));
 
-    EXPECT_EQ(receivedValue, 42);
+  EXPECT_EQ(receivedValue, 42);
 }
 
 TEST_F(EventDispatcherTest, MultipleSubscribersForSameEvent) {
-    std::atomic<int> counter = 0;
-    
-    dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
-        counter++;
-    });
-    dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
-        counter++;
-    });
-    dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
-        counter++;
-    });
+  std::atomic<int> counter = 0;
 
-    dispatcher.publish(TestEventA{100});
+  dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
+    counter++;
+  });
+  dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
+    counter++;
+  });
+  dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
+    counter++;
+  });
 
-    EXPECT_EQ(counter, 3);
+  dispatcher.publish(TestEventA(100));
+
+  EXPECT_EQ(counter, 3);
 }
 
 TEST_F(EventDispatcherTest, CorrectSubscriberForCorrectEventType) {
-    bool eventAReceived = false;
-    bool eventBReceived = false;
+  bool eventAReceived = false;
+  bool eventBReceived = false;
 
-    dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
-        eventAReceived = true;
-    });
-    dispatcher.subscribe<TestEventB>([&](const TestEventB& event) {
-        eventBReceived = true;
-    });
+  dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
+    eventAReceived = true;
+  });
+  dispatcher.subscribe<TestEventB>([&](const TestEventB& event) {
+    eventBReceived = true;
+  });
 
-    dispatcher.publish(TestEventA{1});
+  dispatcher.publish(TestEventA{1});
 
-    EXPECT_TRUE(eventAReceived);
-    EXPECT_FALSE(eventBReceived);
+  EXPECT_TRUE(eventAReceived);
+  EXPECT_FALSE(eventBReceived);
 
-    dispatcher.publish(TestEventB{"test"});
+  eventAReceived = false;
 
-    EXPECT_TRUE(eventAReceived);
-    EXPECT_TRUE(eventBReceived);
+  dispatcher.publish(TestEventB{"test"});
+
+  EXPECT_FALSE(eventAReceived);
+  EXPECT_TRUE(eventBReceived);
 }
 
 TEST_F(EventDispatcherTest, PublishWithNoSubscribers) {
-    EXPECT_NO_THROW(dispatcher.publish(TestEventA{99}));
+  EXPECT_NO_THROW(dispatcher.publish(TestEventA{99}));
 }
 
 TEST_F(EventDispatcherTest, SubscriberThrowsException) {
-    std::atomic<bool> secondSubscriberWasCalled = false;
+  std::atomic<bool> secondSubscriberWasCalled = false;
 
-    dispatcher.subscribe<TestEventA>([](const TestEventA& event) {
-        throw std::runtime_error("Test exception");
-    });
-    dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
-        secondSubscriberWasCalled = true;
-    });
+  dispatcher.subscribe<TestEventA>([](const TestEventA& event) {
+    throw std::runtime_error("Test exception");
+  });
+  dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
+    secondSubscriberWasCalled = true;
+  });
 
-    EXPECT_NO_THROW(dispatcher.publish(TestEventA{1}));
+  // The dispatcher should catch the exception from the first subscriber and continue to call the next one.
+  EXPECT_NO_THROW(dispatcher.publish(TestEventA{1}));
 
-    EXPECT_TRUE(secondSubscriberWasCalled);
+  EXPECT_TRUE(secondSubscriberWasCalled);
 }
 
-TEST_F(EventDispatcherTest, MultithreadedStressTest) {
-    std::atomic<int> eventCount = 0;
-    const int num_events = 1000;
+TEST_F(EventDispatcherTest, MultithreadedPublishStressTest) {
+  std::atomic<int> event_count = 0;
+  const int num_subscribers = 5;
+  const int num_threads = 4;
+  const int events_per_thread = 1000;
 
-    // A subscriber that is present from the start
+  for (int i = 0; i < num_subscribers; ++i) {
     dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
-        eventCount++;
+      event_count++;
     });
+  }
 
-    // Publisher thread: Rapidly publishes events.
-    std::thread publisher([&]() {
-        for (int i = 0; i < num_events; ++i) {
-            dispatcher.publish(TestEventA{i});
-        }
+  std::vector<std::thread> publisher_threads;
+  for (int i = 0; i < num_threads; ++i) {
+    publisher_threads.emplace_back([&]() {
+      for (int j = 0; j < events_per_thread; ++j) {
+        dispatcher.publish(TestEventA{j});
+      }
     });
+  }
 
-    // Subscriber thread: Rapidly subscribes new listeners.
-    std::thread subscriber([&]() {
-        for (int i = 0; i < num_events; ++i) {
-            dispatcher.subscribe<TestEventA>([&](const TestEventA& event) {
-                eventCount++;
-            });
-        }
-    });
+  for (auto& t : publisher_threads) {
+    t.join();
+  }
 
-    publisher.join();
-    subscriber.join();
-
-    // The final count is unpredictable due to race conditions of when
-    // subscriptions are added vs. when events are published.
-    // A non-zero count proves the system is fundamentally working.
-    EXPECT_GT(eventCount, 0);
-    std::cout << "Multithreaded test completed with " << eventCount << " events handled." << std::endl;
+  const int expected_count = num_subscribers * num_threads * events_per_thread;
+  EXPECT_EQ(event_count, expected_count);
+  std::cout << "Multithreaded test completed with " << event_count << " events handled." << std::endl;
 }

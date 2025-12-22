@@ -1,16 +1,16 @@
-#include "orderFactory.h"
+// src/core/orderFactory.cpp
 
 #include <stdexcept>
 #include <string>
 
 #include "events.h"
 #include "order.h"
+#include "orderFactory.h"
 #include "symbolRegistry.h"
 #include "utils.h"
 
 namespace order_factory {
 
-// Forward declarations for helper functions made static to limit scope to this file
 static bool is_valid_price(const std::string& price_str);
 static Price convert_price_to_int(const std::string& price_str);
 

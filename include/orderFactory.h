@@ -10,7 +10,7 @@
 #include "order.h"
 #include "utils.h"
 
-// TODO: Add a constructor for RawOrderParams and update syntax in tests
+// TODO: Do resource pooling
 
 struct RawOrderParams {
     std::string symbol;
