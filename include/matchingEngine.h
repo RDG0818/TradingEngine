@@ -29,6 +29,14 @@ public:
   explicit MatchingEngine(EventDispatcher& event_dispatcher);
   ~MatchingEngine();
 
+  // Rule of five: a class that manages a raw resource like a thread
+  // must manage its lifecycle explicitly.
+  MatchingEngine(const MatchingEngine&) = delete;
+  MatchingEngine& operator=(const MatchingEngine&) = delete;
+  MatchingEngine(MatchingEngine&&) = delete;
+  MatchingEngine& operator=(MatchingEngine&&) = delete;
+
+
   virtual OrderID submit_order(const RawOrderParams& params);  
   void cancel_order(OrderID order_id);
   virtual std::optional<MarketData> get_best_ask(SymbolID symbol_id) const;
@@ -55,6 +63,7 @@ private:
 
   std::thread worker_thread_;
   std::atomic<bool> running_{false};
+  std::atomic<bool> stopped_{false};
   ThreadSafeQueue<EngineEvent> event_queue_;
 
   // A map to own the memory of stop orders that have not yet been triggered

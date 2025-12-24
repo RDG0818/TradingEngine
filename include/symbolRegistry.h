@@ -19,9 +19,10 @@ public:
     // Meyer's Singleton 
     SymbolRegistry(const SymbolRegistry&) = delete;
     SymbolRegistry& operator=(const SymbolRegistry&) = delete;
-    static SymbolRegistry& get_instance() { 
-        static SymbolRegistry instance; 
-        return instance;
+    static SymbolRegistry& get_instance() {
+        // This pointer is intentionally never deleted.
+        static SymbolRegistry* instance = new SymbolRegistry();
+        return *instance;
     }
 
     SymbolID get_id(const std::string& symbol_str);

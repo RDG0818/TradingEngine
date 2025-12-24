@@ -8,14 +8,36 @@
 #include "symbolRegistry.h"
 
 MatchingEngine::MatchingEngine(EventDispatcher& event_dispatcher)
-  : event_dispatcher_(event_dispatcher), next_order_id_(1) {}
+  : event_dispatcher_(event_dispatcher), next_order_id_(1) {
+    LOG_DEBUG("MatchingEngine constructor");
+}
 
 MatchingEngine::~MatchingEngine() {
-  stop();
+  LOG_DEBUG("MatchingEngine destructor");
+  if (!stopped_) {
+    stop();
+  }
+}
+
+void MatchingEngine::stop() {
+  LOG_DEBUG("MatchingEngine::stop() called");
+  if (stopped_.exchange(true)) {
+    LOG_DEBUG("MatchingEngine::stop() - already stopped");
+    return; // Already stopped or stopping
+  }
+  running_ = false;
+  LOG_DEBUG("MatchingEngine::stop() - waking up worker thread");
+  event_queue_.push(OrderID{0}); // wake up the thread
+  if (worker_thread_.joinable()) {
+    LOG_DEBUG("MatchingEngine::stop() - joining worker thread");
+    worker_thread_.join();
+    LOG_DEBUG("MatchingEngine::stop() - worker thread joined");
+  }
 }
 
 OrderID MatchingEngine::submit_order(const RawOrderParams& params) {
   OrderID id = next_order_id_.fetch_add(1);
+  LOG_DEBUG("submit_order: New order ID " + std::to_string(id) + " for symbol " + params.symbol);
 
   try {
     SymbolID symbolID = SymbolRegistry::get_instance().get_id(params.symbol);
@@ -25,38 +47,37 @@ OrderID MatchingEngine::submit_order(const RawOrderParams& params) {
     }
 
     auto order = order_factory::create_order(params, id);
+    LOG_DEBUG("submit_order: Pushing order " + std::to_string(id) + " to event queue");
     event_queue_.push(std::move(order));
   } 
   catch (const InvalidPriceException& e) {
+    LOG_DEBUG("submit_order: REJECTED order " + std::to_string(id) + " - InvalidPriceException: " + e.what());
     event_dispatcher_.publish(OrderRejectedEvent(id, params.trader_id, RejectionReason::INVALID_PRICE, e.what()));
   } 
   catch (const InvalidQuantityException& e) {
+    LOG_DEBUG("submit_order: REJECTED order " + std::to_string(id) + " - InvalidQuantityException: " + e.what());
     event_dispatcher_.publish(OrderRejectedEvent(id, params.trader_id, RejectionReason::INVALID_QUANTITY, e.what()));
   } 
   catch (const UnsupportedOrderTypeException& e) {
+    LOG_DEBUG("submit_order: REJECTED order " + std::to_string(id) + " - UnsupportedOrderTypeException: " + e.what());
     event_dispatcher_.publish(OrderRejectedEvent(id, params.trader_id, RejectionReason::UNSUPPORTED_ORDER_TYPE, e.what()));
   } 
   catch (const std::invalid_argument& e) {
+    LOG_DEBUG("submit_order: REJECTED order " + std::to_string(id) + " - invalid_argument: " + e.what());
     event_dispatcher_.publish(OrderRejectedEvent(id, params.trader_id, RejectionReason::OTHER, e.what()));
   }
   return id;
 }
 
 void MatchingEngine::cancel_order(OrderID orderID) {
+  LOG_DEBUG("cancel_order: Pushing cancellation for order " + std::to_string(orderID) + " to event queue");
   event_queue_.push(orderID);
 }
 
 void MatchingEngine::start() {
+  LOG_DEBUG("MatchingEngine::start() called");
   running_ = true;
   worker_thread_ = std::thread(&MatchingEngine::run_loop, this);
-}
-
-void MatchingEngine::stop() {
-  running_ = false;
-  event_queue_.push(OrderID{0}); // wake up the thread
-  if (worker_thread_.joinable()) {
-    worker_thread_.join();
-  }
 }
 
 OrderBook* MatchingEngine::get_or_create_order_book(SymbolID symbolID) {
@@ -88,35 +109,53 @@ OrderBook* MatchingEngine::get_book(SymbolID symbolID) {
 }
 
 void MatchingEngine::run_loop() {
+  LOG_DEBUG("MatchingEngine::run_loop() started");
   while (running_) {
+    LOG_DEBUG("MatchingEngine::run_loop() - waiting for event");
     EngineEvent event = event_queue_.pop();
+    LOG_DEBUG("MatchingEngine::run_loop() - popped event");
+
     std::visit([this](auto&& arg) {
       using T = std::decay_t<decltype(arg)>;
       if constexpr (std::is_same_v<T, std::unique_ptr<Order>>) {
-        if (arg) process_order_submission(std::move(arg));
+        if (arg) {
+            LOG_DEBUG("Dispatching order submission: ID " + std::to_string(arg->get_order_id()));
+            process_order_submission(std::move(arg));
+        }
       } 
       else if constexpr (std::is_same_v<T, OrderID>) {
-        if (arg != 0) process_order_cancellation(arg);
+        if (arg != 0) {
+            LOG_DEBUG("Dispatching order cancellation: ID " + std::to_string(arg));
+            process_order_cancellation(arg);
+        } else {
+            LOG_DEBUG("Received sentinel stop event");
+        }
       }
     }, std::move(event));
   }
+  LOG_DEBUG("MatchingEngine::run_loop() finished");
 }
 
 void MatchingEngine::process_order_submission(std::unique_ptr<Order> order) {
+  LOG_DEBUG("process_order_submission: Processing order " + std::to_string(order->get_order_id()));
   if (order->get_quantity() == 0) {
+    LOG_DEBUG("process_order_submission: REJECTED order " + std::to_string(order->get_order_id()) + " - zero quantity");
     event_dispatcher_.publish(OrderRejectedEvent(order->get_order_id(), order->get_trader_id(), RejectionReason::INVALID_QUANTITY, "Quantity must be positive."));
     return;
   }
 
   if (order->get_order_type() == OrderType::STOP_MARKET) {
+    LOG_DEBUG("process_order_submission: Identified as STOP_MARKET, delegating. ID " + std::to_string(order->get_order_id()));
     process_stop_market_order(std::unique_ptr<StopMarketOrder>(static_cast<StopMarketOrder*>(order.release())));
     return;
   } 
   else if (order->get_order_type() == OrderType::STOP_LIMIT) {
+    LOG_DEBUG("process_order_submission: Identified as STOP_LIMIT, delegating. ID " + std::to_string(order->get_order_id()));
     process_stop_limit_order(std::unique_ptr<StopLimitOrder>(static_cast<StopLimitOrder*>(order.release())));
     return;
   }
 
+  LOG_DEBUG("process_order_submission: Getting/creating book for order " + std::to_string(order->get_order_id()));
   OrderBook* book = get_or_create_order_book(order->get_symbol_id());
 
   // Level 1/2 Feed Dissemination
@@ -124,7 +163,9 @@ void MatchingEngine::process_order_submission(std::unique_ptr<Order> order) {
   auto prevBestBid = book->get_best_bid();
   auto prevBestAsk = book->get_best_ask();
 
+  LOG_DEBUG("process_order_submission: Matching order " + std::to_string(order->get_order_id()));
   match_order(order.get(), *book);
+  LOG_DEBUG("process_order_submission: Finished matching order " + std::to_string(order->get_order_id()) + ", remaining qty: " + std::to_string(order->get_quantity()));
 
   auto currentBestBid = book->get_best_bid();
   auto currentBestAsk = book->get_best_ask();
@@ -149,16 +190,21 @@ void MatchingEngine::process_order_submission(std::unique_ptr<Order> order) {
 
   if (order->get_quantity() > 0) {
     if (order->get_time_in_force() == TimeInForce::IOC || order->get_time_in_force() == TimeInForce::FOK) {
+      LOG_DEBUG("process_order_submission: Cancelling unfilled IOC/FOK order " + std::to_string(order->get_order_id()));
       order->set_order_status(OrderStatus::CANCELLED);
       event_dispatcher_.publish(OrderCancelledEvent(order->get_symbol_id(), order->get_order_id(), order->get_trader_id(), order->get_quantity()));
     } 
     else if (order->get_order_type() == OrderType::LIMIT) {
+      LOG_DEBUG("process_order_submission: Placing resting LIMIT order " + std::to_string(order->get_order_id()));
       place_resting_limit_order(std::unique_ptr<LimitOrder>(static_cast<LimitOrder*>(order.release())), *book); 
     } 
     else {
+      LOG_DEBUG("process_order_submission: Cancelling unfilled MARKET order " + std::to_string(order->get_order_id()));
       order->set_order_status(OrderStatus::CANCELLED);
       event_dispatcher_.publish(OrderCancelledEvent(order->get_symbol_id(), order->get_order_id(), order->get_trader_id(), order->get_quantity()));
     }
+  } else {
+      LOG_DEBUG("process_order_submission: Order " + std::to_string(order->get_order_id()) + " fully filled.");
   }
 }
 
@@ -207,13 +253,13 @@ void MatchingEngine::process_stop_limit_order(std::unique_ptr<StopLimitOrder> or
 }
 
 void MatchingEngine::process_order_cancellation(OrderID order_id) {
+  LOG_DEBUG("process_order_cancellation: Processing cancellation for order " + std::to_string(order_id));
   SymbolID symbol_id;
   {
     std::lock_guard<std::mutex> lock(order_map_mutex_);
     auto it = order_id_to_symbol_.find(order_id);
     if (it == order_id_to_symbol_.end()) {
-      // No known symbol for this order ID, cannot proceed.
-      // Could be an already-filled order, or an invalid ID.
+      LOG_DEBUG("process_order_cancellation: Order " + std::to_string(order_id) + " not found in order_id_to_symbol_ map. Might be already filled/cancelled.");
       return;
     }
     symbol_id = it->second;
@@ -221,24 +267,27 @@ void MatchingEngine::process_order_cancellation(OrderID order_id) {
 
   OrderBook* book = get_book(symbol_id);
   if (book && book->get_order(order_id)) {
+    LOG_DEBUG("process_order_cancellation: Order " + std::to_string(order_id) + " found in order book. Attempting cancellation.");
     Order* order = book->get_order(order_id);
     TraderID trader_id = order->get_trader_id();
     Quantity quantity = order->get_quantity();
     try {
       book->cancel_order(order_id);
       event_dispatcher_.publish(OrderCancelledEvent(symbol_id, order_id, trader_id, quantity));
+      LOG_DEBUG("process_order_cancellation: Order " + std::to_string(order_id) + " successfully cancelled from book.");
       std::lock_guard<std::mutex> lock(order_map_mutex_);
       order_id_to_symbol_.erase(order_id);
     } 
     catch (const std::invalid_argument& e) {
-            // TODO: add logging for failed cancellation
+      LOG_DEBUG("process_order_cancellation: FAILED to cancel order " + std::to_string(order_id) + " from book: " + e.what());
     }
   }
   else {
-    // If not in the book, it might be an untriggered stop order.
+    LOG_DEBUG("process_order_cancellation: Order " + std::to_string(order_id) + " not in book, checking untriggered stop orders.");
     std::lock_guard<std::mutex> lock(untriggered_orders_mutex_);
     auto it = untriggered_orders_.find(order_id);
     if (it != untriggered_orders_.end()) {
+      LOG_DEBUG("process_order_cancellation: Order " + std::to_string(order_id) + " found in untriggered orders. Cancelling.");
       std::unique_ptr<Order>& order = it->second;
       TraderID trader_id = order->get_trader_id();
       Quantity quantity = order->get_quantity();
@@ -268,14 +317,18 @@ void MatchingEngine::process_order_cancellation(OrderID order_id) {
     untriggered_orders_.erase(it);
 
     event_dispatcher_.publish(OrderCancelledEvent(symbol_id, order_id, trader_id, quantity));
+    LOG_DEBUG("process_order_cancellation: Order " + std::to_string(order_id) + " successfully cancelled from untriggered orders.");
 
     std::lock_guard<std::mutex> symbol_lock(order_map_mutex_);
     order_id_to_symbol_.erase(order_id);
+    } else {
+        LOG_DEBUG("process_order_cancellation: Order " + std::to_string(order_id) + " not found anywhere to cancel.");
     }
   }
 }
 
 void MatchingEngine::match_order(Order* incomingOrder, OrderBook& book) {
+  LOG_DEBUG("match_order: Attempting to match order " + std::to_string(incomingOrder->get_order_id()) + " with qty " + std::to_string(incomingOrder->get_quantity()));
   if (incomingOrder->get_time_in_force() == TimeInForce::FOK) {
     Quantity availableQuantityAtBestPrice = 0;
     if (incomingOrder->get_side() == Side::BUY) {
@@ -295,6 +348,7 @@ void MatchingEngine::match_order(Order* incomingOrder, OrderBook& book) {
       }
     }
     if (incomingOrder->get_quantity() > availableQuantityAtBestPrice) {
+      LOG_DEBUG("match_order: FOK order " + std::to_string(incomingOrder->get_order_id()) + " cannot be fully filled. Required: " + std::to_string(incomingOrder->get_quantity()) + ", Available: " + std::to_string(availableQuantityAtBestPrice));
       return; // FOK order cannot be fully filled at best price, so it's rejected
     }
   }
@@ -302,26 +356,39 @@ void MatchingEngine::match_order(Order* incomingOrder, OrderBook& book) {
   while (incomingOrder->get_quantity() > 0) {
     std::optional<MarketData> bestOpposingLevel = (incomingOrder->get_side() == Side::BUY) ? book.get_best_ask() : book.get_best_bid();
 
-    if (!bestOpposingLevel) break;
+    if (!bestOpposingLevel) {
+        LOG_DEBUG("match_order: No opposing side for order " + std::to_string(incomingOrder->get_order_id()));
+        break;
+    }
 
     if (incomingOrder->get_order_type() == OrderType::LIMIT) {
       auto limitOrder = static_cast<LimitOrder*>(incomingOrder);
       Price limitPrice = limitOrder->get_price();
       Price bestOpposingPrice = bestOpposingLevel->price;
 
-      if (incomingOrder->get_side() == Side::BUY && limitPrice < bestOpposingPrice) break;
-      if (incomingOrder->get_side() == Side::SELL && limitPrice > bestOpposingPrice) break;
+      if ((incomingOrder->get_side() == Side::BUY && limitPrice < bestOpposingPrice) ||
+          (incomingOrder->get_side() == Side::SELL && limitPrice > bestOpposingPrice)) {
+        LOG_DEBUG("match_order: LIMIT order " + std::to_string(incomingOrder->get_order_id()) + " price not aggressive enough to match.");
+        break;
+      }
     }
         
+    LOG_DEBUG("match_order: Iterating orders at price level " + format_price(bestOpposingLevel->price));
     // Use the new callback-based forEachOrderAtPrice
     bool continueMatchingAtPriceLevel = book.for_each_order_at_price(bestOpposingLevel->price,
       incomingOrder->get_side() == Side::BUY ? Side::SELL : Side::BUY,
       [&](OrderID restingOrderID) {
         Order* restingOrder = book.get_order(restingOrderID); 
-        if (!restingOrder) return true; // Continue iteration if order not found
+        if (!restingOrder) {
+            LOG_DEBUG("match_order: Resting order " + std::to_string(restingOrderID) + " not found in book, skipping.");
+            return true; // Continue iteration if order not found
+        }
+
+        LOG_DEBUG("match_order: Considering match between incoming " + std::to_string(incomingOrder->get_order_id()) + " and resting " + std::to_string(restingOrderID));
 
         // Self Match Prevention
         if (restingOrder->get_trader_id() == incomingOrder->get_trader_id()) {
+          LOG_DEBUG("match_order: SELF-MATCH DETECTED. Cancelling resting order " + std::to_string(restingOrderID));
           event_dispatcher_.publish(OrderCancelledEvent(
                                     restingOrder->get_symbol_id(),
                                     restingOrderID,
@@ -335,12 +402,14 @@ void MatchingEngine::match_order(Order* incomingOrder, OrderBook& book) {
         Quantity tradeQuantity = std::min(incomingOrder->get_quantity(), restingOrder->get_quantity());
         Price tradePrice = restingOrder->get_price();
 
+        LOG_DEBUG("match_order: Creating trade between " + std::to_string(incomingOrder->get_order_id()) + " and " + std::to_string(restingOrderID) + " for qty " + std::to_string(tradeQuantity));
         create_trade(incomingOrder, restingOrder, tradePrice, tradeQuantity);
 
         incomingOrder->set_quantity(incomingOrder->get_quantity() - tradeQuantity);
         book.reduce_order_quantity(restingOrderID, tradeQuantity); 
 
         if (incomingOrder->get_quantity() == 0) {
+          LOG_DEBUG("match_order: Incoming order " + std::to_string(incomingOrder->get_order_id()) + " is now fully filled.");
           return false; // Aggressor fully filled, stop iterating orders at this price level
         }
         return true; // Continue iteration
@@ -358,6 +427,7 @@ void MatchingEngine::place_resting_limit_order(std::unique_ptr<LimitOrder> order
 }
 
 void MatchingEngine::create_trade(Order* aggressor, Order* resting, Price tradePrice, Quantity tradeQuantity) {
+  LOG_DEBUG("create_trade: aggressor=" + std::to_string(aggressor->get_order_id()) + ", resting=" + std::to_string(resting->get_order_id()) + ", price=" + format_price(tradePrice) + ", qty=" + std::to_string(tradeQuantity));
   Quantity aggressorRemaining = aggressor->get_quantity() - tradeQuantity;
   Quantity restingRemaining = resting->get_quantity() - tradeQuantity;
   aggressor->set_order_status(aggressorRemaining > 0 ? OrderStatus::PARTIALLY_FILLED : OrderStatus::FILLED);
@@ -368,10 +438,12 @@ void MatchingEngine::create_trade(Order* aggressor, Order* resting, Price tradeP
                             resting->get_order_id(), resting->get_trader_id(), resting->get_quantity()));
 
   if (aggressorRemaining == 0) {
+    LOG_DEBUG("create_trade: aggressor " + std::to_string(aggressor->get_order_id()) + " filled, removing from order_id_to_symbol map");
     std::lock_guard<std::mutex> lock(order_map_mutex_);
     order_id_to_symbol_.erase(aggressor->get_order_id());
   }
   if (restingRemaining == 0) {
+    LOG_DEBUG("create_trade: resting " + std::to_string(resting->get_order_id()) + " filled, removing from order_id_to_symbol map");
     std::lock_guard<std::mutex> lock(order_map_mutex_);
     order_id_to_symbol_.erase(resting->get_order_id());
   }
@@ -380,6 +452,7 @@ void MatchingEngine::create_trade(Order* aggressor, Order* resting, Price tradeP
 }
 
 void MatchingEngine::trigger_stop_orders(SymbolID symbol_id, Price last_trade_price) {
+  LOG_DEBUG("trigger_stop_orders: Checking for symbol " + std::to_string(symbol_id) + " at price " + format_price(last_trade_price));
   std::vector<OrderID> triggered_ids;
     
   {
@@ -390,12 +463,16 @@ void MatchingEngine::trigger_stop_orders(SymbolID symbol_id, Price last_trade_pr
     }
     auto& stop_orders = symbol_stops_it->second;
 
+    // Trigger buy stops (stop price <= last trade price)
     for (auto it = stop_orders.buy_stops.begin(); it != stop_orders.buy_stops.end() && it->first <= last_trade_price; ) {
+      LOG_DEBUG("trigger_stop_orders: Triggering buy stops at price " + format_price(it->first));
       triggered_ids.insert(triggered_ids.end(), it->second.begin(), it->second.end());
       it = stop_orders.buy_stops.erase(it);
     }
 
+    // Trigger sell stops (stop price >= last trade price)
     for (auto it = stop_orders.sell_stops.begin(); it != stop_orders.sell_stops.end() && it->first >= last_trade_price; ) {
+      LOG_DEBUG("trigger_stop_orders: Triggering sell stops at price " + format_price(it->first));
       triggered_ids.insert(triggered_ids.end(), it->second.begin(), it->second.end());
       it = stop_orders.sell_stops.erase(it);
     }
@@ -403,6 +480,7 @@ void MatchingEngine::trigger_stop_orders(SymbolID symbol_id, Price last_trade_pr
 
   // Activate the triggered orders 
   if (!triggered_ids.empty()) {
+    LOG_DEBUG("trigger_stop_orders: Activating " + std::to_string(triggered_ids.size()) + " triggered orders.");
     std::lock_guard<std::mutex> untriggered_lock(untriggered_orders_mutex_);
     for (OrderID id : triggered_ids) {
       auto order_it = untriggered_orders_.find(id);
@@ -412,12 +490,14 @@ void MatchingEngine::trigger_stop_orders(SymbolID symbol_id, Price last_trade_pr
               
         if (triggered_order->get_order_type() == OrderType::STOP_MARKET) {
           auto* stop_order = static_cast<StopMarketOrder*>(triggered_order.get());
+          LOG_DEBUG("trigger_stop_orders: Activating STOP_MARKET " + std::to_string(id) + " as new MARKET order.");
           event_queue_.push(std::make_unique<MarketOrder>(
                       stop_order->get_symbol_id(), stop_order->get_order_id(), 
                       stop_order->get_side(), stop_order->get_quantity(), stop_order->get_trader_id()));
         } 
         else if (triggered_order->get_order_type() == OrderType::STOP_LIMIT) {
           auto* stop_order = static_cast<StopLimitOrder*>(triggered_order.get());
+          LOG_DEBUG("trigger_stop_orders: Activating STOP_LIMIT " + std::to_string(id) + " as new LIMIT order.");
           event_queue_.push(std::make_unique<LimitOrder>(
                       stop_order->get_symbol_id(), stop_order->get_order_id(), stop_order->get_side(), 
                       stop_order->get_price(), stop_order->get_quantity(), stop_order->get_trader_id()));
