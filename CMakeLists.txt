@@ -17,6 +17,7 @@ set(PROJECT_SRC_DIR ${PROJECT_SOURCE_DIR}/src)
 include_directories(
     ${PROJECT_INCLUDE_DIR}
     ${PROJECT_SRC_DIR}/core
+    ${PROJECT_SOURCE_DIR}/third_party/moodycamel
     ${Boost_INCLUDE_DIRS}
 )
 

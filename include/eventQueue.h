@@ -3,44 +3,38 @@
 #ifndef TRADINGENGINE_INCLUDE_EVENTQUEUE_H_
 #define TRADINGENGINE_INCLUDE_EVENTQUEUE_H_
 
-#include <condition_variable>
 #include <memory>
-#include <mutex>
-#include <queue>
 #include <variant>
 
 #include "order.h"
 #include "utils.h"
+#include "blockingconcurrentqueue.h"
 
-// TODO: Consider using a lockless data structure
+// The queue now uses moodycamel's high-performance blocking concurrent queue
+// instead of a standard queue with a mutex and condition variable.
 
 using EngineEvent = std::variant<std::unique_ptr<Order>, OrderID>; 
 
 template<typename T>
 class ThreadSafeQueue {
 private:
-  std::queue<T> queue_;
-  mutable std::mutex mtx_;
-  std::condition_variable cv_;
+  moodycamel::BlockingConcurrentQueue<T> queue_;
 
 public:
   void push(T value) {
-    std::lock_guard<std::mutex> lock(mtx_);
-    queue_.push(std::move(value));
-    cv_.notify_one();
+    queue_.enqueue(std::move(value));
   }
 
   T pop() {
-    std::unique_lock<std::mutex> lock(mtx_);
-    cv_.wait(lock, [this]{ return !queue_.empty(); });
-    T value = std::move(queue_.front());
-    queue_.pop();
+    T value;
+    queue_.wait_dequeue(value);
     return value;
   }
 
   bool empty() const {
-    std::lock_guard<std::mutex> lock(mtx_);
-    return queue_.empty();
+    // Note: size_approx() is not perfectly accurate in a concurrent environment,
+    // but it is sufficient for a general "empty" check.
+    return queue_.size_approx() == 0;
   }
 };
 
