@@ -77,40 +77,28 @@ BENCHMARK_F(LatencyBenchmarkFixture, BM_SubmissionLatency)(benchmark::State& sta
 }
 
 
-// --- Test #2: Matching Throughput Benchmark ---
-// This test needs a single, shared engine that lives for all threaded runs
-// to measure the engine's performance under concurrent load. This mirrors the old, working code.
-
 static void BM_MatchingThroughput(benchmark::State& state) {
-    // Static, shared state for all threads and runs, initialized only once.
     static std::once_flag flag;
     static EventDispatcher dispatcher;
     static MatchingEngine engine(dispatcher);
-    static LatencyListener listener; // Used only for initial setup.
+    static LatencyListener listener; 
 
-    // Initialize and pre-fill the order book once for all runs.
     std::call_once(flag, []() {
         listener.subscribe(dispatcher);
         engine.start();
-        // Pre-fill both sides of the book to ensure trades can happen.
         for (int i = 0; i < 100; ++i) {
             engine.submit_order({.symbol = "THR_SYM", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = format_price(1010000 + i * 100), .quantity = 100, .trader_id = 999});
             engine.submit_order({.symbol = "THR_SYM", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = format_price(990000 - i * 100), .quantity = 100, .trader_id = 998});
         }
-        // This is a simple way to wait for setup, but not perfectly robust.
-        // In a real scenario, we might wait for a specific number of accepted order events.
         std::this_thread::sleep_for(std::chrono::milliseconds(200)); 
     });
 
     const TraderID trader_id = static_cast<TraderID>(state.thread_index());
 
-    // The timed loop: each thread executes this loop, submitting aggressive orders.
     for (auto _ : state) {
         if (state.thread_index() % 2 == 0) {
-            // Buyers submit orders guaranteed to match against resting asks.
             engine.submit_order({.symbol = "THR_SYM", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "105.00", .quantity = 1, .trader_id = trader_id});
         } else {
-            // Sellers submit orders guaranteed to match against resting bids.
             engine.submit_order({.symbol = "THR_SYM", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "95.00", .quantity = 1, .trader_id = trader_id});
         }
     }

@@ -29,8 +29,6 @@ public:
   explicit MatchingEngine(EventDispatcher& event_dispatcher);
   ~MatchingEngine();
 
-  // Rule of five: a class that manages a raw resource like a thread
-  // must manage its lifecycle explicitly.
   MatchingEngine(const MatchingEngine&) = delete;
   MatchingEngine& operator=(const MatchingEngine&) = delete;
   MatchingEngine(MatchingEngine&&) = delete;
@@ -46,8 +44,7 @@ public:
   void start();
   void stop();
 
-  // --- Test-only Methods ---
-  // TODO(test): Revisit if this method should return OrderBook* or a const OrderBook*
+  // TODO: Revisit if this method should return OrderBook* or a const OrderBook*
   OrderBook* get_book(SymbolID symbol_id);
 
 private:

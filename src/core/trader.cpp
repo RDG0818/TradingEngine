@@ -6,8 +6,6 @@
 
 #include "symbolRegistry.h"
 
-// --- LiquidityTrader ---
-
 RandomMarketTrader::RandomMarketTrader(MatchingEngine& engine, EventDispatcher& dispatcher, TraderID trader_id, 
                                  float lambda, std::chrono::milliseconds time_delta, const std::vector<std::string>& symbols, int max_quantity)
     : Trader(TraderType::LIQUIDITY, engine, dispatcher, trader_id, symbols),
@@ -109,8 +107,6 @@ void RandomLimitTrader::tick() {
         time_until_order_s_ += exp_dist_(gen_);
     }
 }
-
-// --- MarketMakerTrader ---
 
 MarketMakerTrader::MarketMakerTrader(MatchingEngine& engine, EventDispatcher& dispatcher, TraderID trader_id,
                                      const std::vector<std::string>& symbols, double mu, double sigma, double spread,
