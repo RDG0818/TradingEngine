@@ -71,3 +71,13 @@ add_executable(benchmarks
 
 target_link_libraries(benchmarks benchmark::benchmark Boost::boost core_lib)
 target_include_directories(benchmarks PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Pybind11
+
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+FetchContent_Declare(
+  pybind11
+  URL https://github.com/pybind/pybind11/archive/refs/tags/v3.0.1.zip 
+)
+FetchContent_MakeAvailable(pybind11)
+pybind11_add_module(trading_engine_py src/pythonBindings.cpp)
