@@ -6,19 +6,14 @@ build:
 	@cmake -B build -S . -DPython3_EXECUTABLE=$(which python3)
 	@cmake --build build
 	@cd build
-	@python3 -m pybind11_stubgen -m trading_engine_py --output-dir=.
+	@python3 -m pybind11_stubgen trading_engine_py --output-dir=. --enum-class-locations TimeInForce:trading_engine_py.TimeInForce
 	@touch __init__.py
 	@cd .. 
 	@echo "Build complete."
 
-stubs: build
-	@echo "Generating Python stubs..."
-	@PYTHONPATH=./python stubgen -m trading_engine.trading_core -o python/trading_engine
-	@echo "Stub generation complete."
-
 test: build
 	@echo "Running C++ tests..."
-	@./build/my_tests
+	@./build/tests
 	@echo "Running Python tests..."
 	@PYTHONPATH=./python pytest
 	@echo "All tests completed."

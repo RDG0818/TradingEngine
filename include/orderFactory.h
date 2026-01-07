@@ -25,7 +25,7 @@ struct RawOrderParams {
 
 namespace order_factory {
 
-std::unique_ptr<Order> create_order(const RawOrderParams& params, OrderID order_id);
+std::shared_ptr<Order> create_order(const RawOrderParams& params, OrderID order_id);
 
 } // namespace order_factory
 

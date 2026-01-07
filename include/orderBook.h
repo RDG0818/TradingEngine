@@ -50,14 +50,14 @@ private:
 
   std::map<Price, PriceLevel, std::greater<Price>> bids_; // Sorted high to low
   std::map<Price, PriceLevel> asks_;                      // Sorted low to high
-  std::unordered_map<OrderID, std::unique_ptr<Order>> all_orders_; // O(1) lookup for Order data
+  std::unordered_map<OrderID, std::shared_ptr<Order>> all_orders_; // O(1) lookup for Order data
   std::unordered_map<OrderID, std::list<OrderID>::iterator> order_iterators_; // O(1) removal from PriceLevel list
 
-  void remove_order(std::unordered_map<OrderID, std::unique_ptr<Order>>::iterator all_orders_it);
+  void remove_order(std::unordered_map<OrderID, std::shared_ptr<Order>>::iterator all_orders_it);
 
 public:
 
-  void add_order(std::unique_ptr<LimitOrder> order);
+  void add_order(std::shared_ptr<LimitOrder> order);
   void cancel_order(OrderID order_id);
   Order* get_order(OrderID order_id);
   void reduce_order_quantity(OrderID order_id, Quantity quantity_to_reduce);

@@ -1,12 +1,16 @@
-# High-Frequency Trading Engine  
+# Talat 
 
-A high-performance trading engine built in C++.
+Talat is a high-performance simulated trading exchange built in C++, Python, and React.  
+
+Talat means 'market' in Thai.
 
 ## Overview
 
 ## Features
 - Matching Engine
 - Orderbook
+- React Frontend
+- FastAPI Backend
 - Support for the following order types:
     - Limit
     - Stop Limit
@@ -55,6 +59,7 @@ cmake --build build
 TODO:
 - Implement different algorithm traders (random, momentum, etc.)
 - Incorporate more of boost
+- manual trading through frontend
 
 - Integration with a visualization library for plotting equity curves and performance metrics
 - Support for options and other derivatives

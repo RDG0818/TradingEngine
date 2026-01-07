@@ -64,7 +64,7 @@ private:
   ThreadSafeQueue<EngineEvent> event_queue_;
 
   // A map to own the memory of stop orders that have not yet been triggered
-  std::unordered_map<OrderID, std::unique_ptr<Order>> untriggered_orders_;
+  std::unordered_map<OrderID, std::shared_ptr<Order>> untriggered_orders_;
   mutable std::mutex untriggered_orders_mutex_;
 
   // Stop orders are segregated by symbol for correctness and performance
@@ -77,12 +77,12 @@ private:
 
   // Private helper methods
   void run_loop();
-  void process_order_submission(std::unique_ptr<Order> order);
+  void process_order_submission(std::shared_ptr<Order> order);
   void process_order_cancellation(OrderID order_id);
-  void process_stop_market_order(std::unique_ptr<StopMarketOrder> order);
-  void process_stop_limit_order(std::unique_ptr<StopLimitOrder> order);
+  void process_stop_market_order(std::shared_ptr<StopMarketOrder> order);
+  void process_stop_limit_order(std::shared_ptr<StopLimitOrder> order);
   void match_order(Order* incoming_order, OrderBook& book);
-  void place_resting_limit_order(std::unique_ptr<LimitOrder> order, OrderBook& book);
+  void place_resting_limit_order(std::shared_ptr<LimitOrder> order, OrderBook& book);
   void create_trade(Order* aggressor, Order* resting, Price trade_price, Quantity trade_quantity);
   void trigger_stop_orders(SymbolID symbol_id, Price last_trade_price);
   OrderBook* get_or_create_order_book(SymbolID symbol_id);

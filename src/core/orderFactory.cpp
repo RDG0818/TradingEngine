@@ -14,7 +14,7 @@ namespace order_factory {
 static bool is_valid_price(const std::string& price_str);
 static Price convert_price_to_int(const std::string& price_str);
 
-std::unique_ptr<Order> create_order(const RawOrderParams& params, OrderID order_id) {
+std::shared_ptr<Order> create_order(const RawOrderParams& params, OrderID order_id) {
     SymbolID symbol_id = SymbolRegistry::get_instance().get_id(params.symbol);
 
     Price price_int = 0;
@@ -39,13 +39,13 @@ std::unique_ptr<Order> create_order(const RawOrderParams& params, OrderID order_
 
     switch (params.order_type) {
         case OrderType::LIMIT:
-            return std::make_unique<LimitOrder>(symbol_id, order_id, params.side, price_int, params.quantity, params.trader_id, params.time_in_force);
+            return std::make_shared<LimitOrder>(symbol_id, order_id, params.side, price_int, params.quantity, params.trader_id, params.time_in_force);
         case OrderType::MARKET:
-            return std::make_unique<MarketOrder>(symbol_id, order_id, params.side, params.quantity, params.trader_id);
+            return std::make_shared<MarketOrder>(symbol_id, order_id, params.side, params.quantity, params.trader_id);
         case OrderType::STOP_MARKET:
-            return std::make_unique<StopMarketOrder>(symbol_id, order_id, params.side, params.quantity, params.trader_id, stop_price_int);
+            return std::make_shared<StopMarketOrder>(symbol_id, order_id, params.side, params.quantity, params.trader_id, stop_price_int);
         case OrderType::STOP_LIMIT:
-            return std::make_unique<StopLimitOrder>(symbol_id, order_id, params.side, params.quantity, params.trader_id, stop_price_int, price_int, params.time_in_force);
+            return std::make_shared<StopLimitOrder>(symbol_id, order_id, params.side, params.quantity, params.trader_id, stop_price_int, price_int, params.time_in_force);
         default:
             throw UnsupportedOrderTypeException("Unsupported order type.");
     }

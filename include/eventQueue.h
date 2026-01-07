@@ -13,7 +13,7 @@
 // The queue now uses moodycamel's high-performance blocking concurrent queue
 // instead of a standard queue with a mutex and condition variable.
 
-using EngineEvent = std::variant<std::unique_ptr<Order>, OrderID>; 
+using EngineEvent = std::variant<std::shared_ptr<Order>, OrderID>; 
 
 template<typename T>
 class ThreadSafeQueue {

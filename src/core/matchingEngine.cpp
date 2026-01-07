@@ -117,7 +117,7 @@ void MatchingEngine::run_loop() {
 
     std::visit([this](auto&& arg) {
       using T = std::decay_t<decltype(arg)>;
-      if constexpr (std::is_same_v<T, std::unique_ptr<Order>>) {
+      if constexpr (std::is_same_v<T, std::shared_ptr<Order>>) {
         if (arg) {
             LOG_DEBUG("Dispatching order submission: ID " + std::to_string(arg->get_order_id()));
             process_order_submission(std::move(arg));
@@ -136,7 +136,7 @@ void MatchingEngine::run_loop() {
   LOG_DEBUG("MatchingEngine::run_loop() finished");
 }
 
-void MatchingEngine::process_order_submission(std::unique_ptr<Order> order) {
+void MatchingEngine::process_order_submission(std::shared_ptr<Order> order) {
   LOG_DEBUG("process_order_submission: Processing order " + std::to_string(order->get_order_id()));
   if (order->get_quantity() == 0) {
     LOG_DEBUG("process_order_submission: REJECTED order " + std::to_string(order->get_order_id()) + " - zero quantity");
@@ -146,12 +146,12 @@ void MatchingEngine::process_order_submission(std::unique_ptr<Order> order) {
 
   if (order->get_order_type() == OrderType::STOP_MARKET) {
     LOG_DEBUG("process_order_submission: Identified as STOP_MARKET, delegating. ID " + std::to_string(order->get_order_id()));
-    process_stop_market_order(std::unique_ptr<StopMarketOrder>(static_cast<StopMarketOrder*>(order.release())));
+    process_stop_market_order(std::static_pointer_cast<StopMarketOrder>(order));
     return;
   } 
   else if (order->get_order_type() == OrderType::STOP_LIMIT) {
     LOG_DEBUG("process_order_submission: Identified as STOP_LIMIT, delegating. ID " + std::to_string(order->get_order_id()));
-    process_stop_limit_order(std::unique_ptr<StopLimitOrder>(static_cast<StopLimitOrder*>(order.release())));
+    process_stop_limit_order(std::static_pointer_cast<StopLimitOrder>(order));
     return;
   }
 
@@ -196,7 +196,7 @@ void MatchingEngine::process_order_submission(std::unique_ptr<Order> order) {
     } 
     else if (order->get_order_type() == OrderType::LIMIT) {
       LOG_DEBUG("process_order_submission: Placing resting LIMIT order " + std::to_string(order->get_order_id()));
-      place_resting_limit_order(std::unique_ptr<LimitOrder>(static_cast<LimitOrder*>(order.release())), *book); 
+      place_resting_limit_order(std::static_pointer_cast<LimitOrder>(order), *book); 
     } 
     else {
       LOG_DEBUG("process_order_submission: Cancelling unfilled MARKET order " + std::to_string(order->get_order_id()));
@@ -208,7 +208,7 @@ void MatchingEngine::process_order_submission(std::unique_ptr<Order> order) {
   }
 }
 
-void MatchingEngine::process_stop_market_order(std::unique_ptr<StopMarketOrder> order) {
+void MatchingEngine::process_stop_market_order(std::shared_ptr<StopMarketOrder> order) {
   const OrderID order_id = order->get_order_id();
   const Price stop_price = order->get_stop_price();
   const SymbolID symbol_id = order->get_symbol_id();
@@ -230,7 +230,7 @@ void MatchingEngine::process_stop_market_order(std::unique_ptr<StopMarketOrder> 
   }
 }
 
-void MatchingEngine::process_stop_limit_order(std::unique_ptr<StopLimitOrder> order) {
+void MatchingEngine::process_stop_limit_order(std::shared_ptr<StopLimitOrder> order) {
   const OrderID order_id = order->get_order_id();
   const Price stop_price = order->get_stop_price();
   const SymbolID symbol_id = order->get_symbol_id();
@@ -288,7 +288,7 @@ void MatchingEngine::process_order_cancellation(OrderID order_id) {
     auto it = untriggered_orders_.find(order_id);
     if (it != untriggered_orders_.end()) {
       LOG_DEBUG("process_order_cancellation: Order " + std::to_string(order_id) + " found in untriggered orders. Cancelling.");
-      std::unique_ptr<Order>& order = it->second;
+      std::shared_ptr<Order>& order = it->second;
       TraderID trader_id = order->get_trader_id();
       Quantity quantity = order->get_quantity();
       // Remove from the price-level stop map
@@ -420,7 +420,7 @@ void MatchingEngine::match_order(Order* incomingOrder, OrderBook& book) {
   }
 }
 
-void MatchingEngine::place_resting_limit_order(std::unique_ptr<LimitOrder> order, OrderBook& book) {
+void MatchingEngine::place_resting_limit_order(std::shared_ptr<LimitOrder> order, OrderBook& book) {
   order->set_order_status(OrderStatus::ACCEPTED);
   event_dispatcher_.publish(OrderAcceptedEvent(order->get_symbol_id(), order->get_order_id(), order->get_trader_id(), order->get_side(), order->get_price(), order->get_quantity()));
   book.add_order(std::move(order));
@@ -485,20 +485,20 @@ void MatchingEngine::trigger_stop_orders(SymbolID symbol_id, Price last_trade_pr
     for (OrderID id : triggered_ids) {
       auto order_it = untriggered_orders_.find(id);
       if (order_it != untriggered_orders_.end()) {
-        std::unique_ptr<Order> triggered_order = std::move(order_it->second);
+        std::shared_ptr<Order> triggered_order = std::move(order_it->second);
         untriggered_orders_.erase(order_it);
               
         if (triggered_order->get_order_type() == OrderType::STOP_MARKET) {
           auto* stop_order = static_cast<StopMarketOrder*>(triggered_order.get());
           LOG_DEBUG("trigger_stop_orders: Activating STOP_MARKET " + std::to_string(id) + " as new MARKET order.");
-          event_queue_.push(std::make_unique<MarketOrder>(
+          event_queue_.push(std::make_shared<MarketOrder>(
                       stop_order->get_symbol_id(), stop_order->get_order_id(), 
                       stop_order->get_side(), stop_order->get_quantity(), stop_order->get_trader_id()));
         } 
         else if (triggered_order->get_order_type() == OrderType::STOP_LIMIT) {
           auto* stop_order = static_cast<StopLimitOrder*>(triggered_order.get());
           LOG_DEBUG("trigger_stop_orders: Activating STOP_LIMIT " + std::to_string(id) + " as new LIMIT order.");
-          event_queue_.push(std::make_unique<LimitOrder>(
+          event_queue_.push(std::make_shared<LimitOrder>(
                       stop_order->get_symbol_id(), stop_order->get_order_id(), stop_order->get_side(), 
                       stop_order->get_price(), stop_order->get_quantity(), stop_order->get_trader_id()));
         }

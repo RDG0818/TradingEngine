@@ -9,7 +9,7 @@
 
 #include "orderBook.h"
 
-void OrderBook::add_order(std::unique_ptr<LimitOrder> order) {
+void OrderBook::add_order(std::shared_ptr<LimitOrder> order) {
   const Side side = order->get_side();
   const OrderID order_id = order->get_order_id();
   const Price price = order->get_price();
@@ -44,7 +44,7 @@ void OrderBook::add_order(std::unique_ptr<LimitOrder> order) {
 // TODO: Consider creating a helper function to reduce code duplication
 //                    in add_order, remove_order, and reduce_order_quantity,
 //                    as they contain similar if/else branching for BUY/SELL sides.
-void OrderBook::remove_order(std::unordered_map<OrderID, std::unique_ptr<Order>>::iterator all_orders_it) {
+void OrderBook::remove_order(std::unordered_map<OrderID, std::shared_ptr<Order>>::iterator all_orders_it) {
   Order* order = all_orders_it->second.get(); // Note: Locking is handled by the calling function (e.g., cancel_order, reduce_order_quantity)
   const OrderID order_id = order->get_order_id();
   const Price price = order->get_price();
