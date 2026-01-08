@@ -92,8 +92,9 @@ protected:
     MockEventListener listener;
     SymbolID aapl_id;
     SymbolID goog_id;
+    OrderIdGenerator order_id_generator;
 
-    MatchingEngineTest() : engine(dispatcher) {}
+    MatchingEngineTest() : engine(dispatcher, order_id_generator) {}
 
     void SetUp() override {
         listener.subscribe(dispatcher);

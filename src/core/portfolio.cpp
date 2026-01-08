@@ -23,6 +23,10 @@ const std::deque<TradeExecutedEvent>& Portfolio::get_trade_history() const {
   return trade_history_;
 };
 
+const std::map<SymbolID, Quantity>& Portfolio::get_all_positions() const {
+  return assets_;
+}
+
 bool Portfolio::can_submit_order(const std::shared_ptr<Order>& order) const {
   if (order->get_quantity() <= 0) {
     return false;

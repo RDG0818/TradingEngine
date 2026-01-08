@@ -22,11 +22,13 @@
 #include "orderFactory.h"
 #include "utils.h"
 
+class OrderIdGenerator;
+
 class MatchingEngine {
 
 public:
 
-  explicit MatchingEngine(EventDispatcher& event_dispatcher);
+  explicit MatchingEngine(EventDispatcher& event_dispatcher, OrderIdGenerator& id_generator);
   ~MatchingEngine();
 
   MatchingEngine(const MatchingEngine&) = delete;
@@ -35,11 +37,13 @@ public:
   MatchingEngine& operator=(MatchingEngine&&) = delete;
 
 
-  virtual OrderID submit_order(const RawOrderParams& params);  
+  virtual OrderID submit_order(const RawOrderParams& params);
+  virtual void submit_order(std::shared_ptr<Order> order);
   void cancel_order(OrderID order_id);
   virtual std::optional<MarketData> get_best_ask(SymbolID symbol_id) const;
   virtual std::optional<MarketData> get_best_bid(SymbolID symbol_id) const;
   void print_top_of_book(std::string symbol, int num_price_levels);
+  bool is_running() const;
 
   void start();
   void stop();
@@ -50,7 +54,7 @@ public:
 private:
 
   EventDispatcher& event_dispatcher_;
-  std::atomic<OrderID> next_order_id_;
+  OrderIdGenerator& id_generator_;
 
   std::unordered_map<SymbolID, std::unique_ptr<OrderBook>> books_;
   mutable std::shared_mutex books_mutex_;
@@ -89,5 +93,3 @@ private:
 };
 
 #endif // TRADINGENGINE_INCLUDE_MATCHINGENGINE_H_
-
-

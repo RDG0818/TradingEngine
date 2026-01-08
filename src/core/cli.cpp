@@ -1,3 +1,4 @@
+// src/core/cli.cpp
 #include "matchingEngine.h"
 #include "trader.h"
 #include "traderManager.h"
@@ -5,10 +6,11 @@
 #include <signal.h>
 #include <atomic>
 
+// This file is intended as an example use case of the trading engine and virtual traders
+
 // TODO: Add input validation
 // TODO: Add further configurations for each trader
 // TODO: Figure out how to replace top of orderbook instead of just print
-// TODO: Wrap the whole thing in python and make it a backend
 
 std::atomic<bool> isRunning(true);
 void signal_handler(int signal) {
@@ -21,9 +23,9 @@ int main() {
 
     // Initialization
     EventDispatcher dispatcher;
-    MatchingEngine engine(dispatcher);
+    OrderIdGenerator order_id_generator;
+    MatchingEngine engine(dispatcher, order_id_generator);
     std::chrono::milliseconds tickInterval = std::chrono::milliseconds(10);
-    TraderManager manager(tickInterval);
     std::cout << "How many random market traders in the market?\n";
     int numLiquidTraders; std::cin >> numLiquidTraders;
 
@@ -40,6 +42,8 @@ int main() {
     std::cout << "What are the initial prices of each symbol?\n";
     std::unordered_map<std::string, double> initialPrices; for(int i=0;i<numSymbols;i++) std::cin >> initialPrices[symbols[i]];
 
+    TraderManager manager(engine, dispatcher, tickInterval, symbols);
+
     // Creating Bots
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -47,46 +51,31 @@ int main() {
 
     int i = 0;
     for (; i < numLiquidTraders; i++) {
-        auto liquidTrader = std::make_unique<RandomMarketTrader>(
-            engine,
-            dispatcher,
-            i, // TraderID
+        manager.addRandomMarketTrader(
             static_cast<float>(lambda_dist(gen)),
             tickInterval,
-            symbols,
-            10 // Max quantity
+            10
         );
-        manager.addTrader(std::move(liquidTrader));
     }
 
     for (; i < numLiquidTraders + numRandomTraders; i++) {
-        auto randomTrader = std::make_unique<RandomLimitTrader>(
-            engine,
-            dispatcher,
-            i,
+        manager.addRandomLimitTrader(
             static_cast<float>(lambda_dist(gen)),
             tickInterval,
-            symbols,
             10,
-            0.15 // Normal Dist Variation
+            0.15
         );
-        manager.addTrader(std::move(randomTrader));
     }
 
     for (; i < numLiquidTraders + numRandomTraders + numMarketMakerTraders; i++) {
-        auto marketMakerTrader = std::make_unique<MarketMakerTrader>(
-            engine,
-            dispatcher,
-            i, // TraderID
-            symbols,
-            0.0, // mu
-            0.025, // sigma
-            0.001, // spread
+        manager.addMarketMakerTrader(
+            0.0,
+            0.025,
+            0.001,
             tickInterval,
-            10, // max quantity
-            initialPrices // initial prices
+            10,
+            initialPrices
         );
-        manager.addTrader(std::move(marketMakerTrader));
     }
 
     engine.start();

@@ -23,13 +23,14 @@ public:
   const std::deque<TradeExecutedEvent>& get_trade_history() const;
   bool can_submit_order(const std::shared_ptr<Order>& order) const;
   void on_trade_executed(const TradeExecutedEvent& trade, const std::shared_ptr<Order>& order);
+  const std::map<SymbolID, Quantity>& get_all_positions() const;
 
 private:
 
   MatchingEngine& engine_;
   Price balance_;
   TraderID trader_id_;
-  std::map<SymbolID, int> assets_;
+  std::map<SymbolID, Quantity> assets_;
 
   std::deque<std::shared_ptr<Order>> order_history_;
   static constexpr size_t MAX_ORDER_HISTORY_SIZE = 1000;

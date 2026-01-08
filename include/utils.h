@@ -3,6 +3,7 @@
 #ifndef TRADINGENGINE_INCLUDE_UTILS_H_
 #define TRADINGENGINE_INCLUDE_UTILS_H_
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <iomanip>
@@ -138,6 +139,16 @@ public:
 class UnsupportedOrderTypeException : public std::invalid_argument {
 public:
     explicit UnsupportedOrderTypeException(const std::string& what_arg) : std::invalid_argument(what_arg) {}
+};
+
+class OrderIdGenerator {
+public:
+    OrderIdGenerator() : next_order_id_(1) {}
+    OrderID new_id() {
+        return next_order_id_.fetch_add(1);
+    }
+private:
+    std::atomic<OrderID> next_order_id_;
 };
 
 #endif  // TRADINGENGINE_INCLUDE_UTILS_H_

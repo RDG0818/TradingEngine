@@ -7,8 +7,8 @@
 #include "orderFactory.h"
 #include "symbolRegistry.h"
 
-MatchingEngine::MatchingEngine(EventDispatcher& event_dispatcher)
-  : event_dispatcher_(event_dispatcher), next_order_id_(1) {
+MatchingEngine::MatchingEngine(EventDispatcher& event_dispatcher, OrderIdGenerator& id_generator)
+  : event_dispatcher_(event_dispatcher), id_generator_(id_generator) {
     LOG_DEBUG("MatchingEngine constructor");
 }
 
@@ -36,7 +36,7 @@ void MatchingEngine::stop() {
 }
 
 OrderID MatchingEngine::submit_order(const RawOrderParams& params) {
-  OrderID id = next_order_id_.fetch_add(1);
+  OrderID id = id_generator_.new_id();
   LOG_DEBUG("submit_order: New order ID " + std::to_string(id) + " for symbol " + params.symbol);
 
   try {
@@ -69,6 +69,15 @@ OrderID MatchingEngine::submit_order(const RawOrderParams& params) {
   return id;
 }
 
+void MatchingEngine::submit_order(std::shared_ptr<Order> order) {
+  LOG_DEBUG("submit_order: Pushing pre-created order " + std::to_string(order->get_order_id()) + " to event queue");
+  {
+    std::lock_guard<std::mutex> lock(order_map_mutex_);
+    order_id_to_symbol_[order->get_order_id()] = order->get_symbol_id();
+  }
+  event_queue_.push(std::move(order));
+}
+
 void MatchingEngine::cancel_order(OrderID orderID) {
   LOG_DEBUG("cancel_order: Pushing cancellation for order " + std::to_string(orderID) + " to event queue");
   event_queue_.push(orderID);
@@ -76,7 +85,12 @@ void MatchingEngine::cancel_order(OrderID orderID) {
 
 void MatchingEngine::start() {
   LOG_DEBUG("MatchingEngine::start() called");
-  running_ = true;
+  bool expected = false;
+  if (!running_.compare_exchange_strong(expected, true)) {
+    LOG_DEBUG("MatchingEngine::start() - already running");
+    return;
+  }
+  stopped_ = false;
   worker_thread_ = std::thread(&MatchingEngine::run_loop, this);
 }
 
@@ -158,8 +172,7 @@ void MatchingEngine::process_order_submission(std::shared_ptr<Order> order) {
   LOG_DEBUG("process_order_submission: Getting/creating book for order " + std::to_string(order->get_order_id()));
   OrderBook* book = get_or_create_order_book(order->get_symbol_id());
 
-  // Level 1/2 Feed Dissemination
-    
+  // Capture book state before any changes
   auto prevBestBid = book->get_best_bid();
   auto prevBestAsk = book->get_best_ask();
 
@@ -167,27 +180,7 @@ void MatchingEngine::process_order_submission(std::shared_ptr<Order> order) {
   match_order(order.get(), *book);
   LOG_DEBUG("process_order_submission: Finished matching order " + std::to_string(order->get_order_id()) + ", remaining qty: " + std::to_string(order->get_quantity()));
 
-  auto currentBestBid = book->get_best_bid();
-  auto currentBestAsk = book->get_best_ask();
-
-  bool bidChanged = (prevBestBid.has_value() != currentBestBid.has_value()) || 
-                    (currentBestBid.has_value() && (prevBestBid->price != currentBestBid->price || 
-                    prevBestBid->quantity != currentBestBid->quantity));
-
-  bool askChanged = (prevBestAsk.has_value() != currentBestAsk.has_value()) || 
-                      (currentBestAsk.has_value() && (prevBestAsk->price != currentBestAsk->price || 
-                      prevBestAsk->quantity != currentBestAsk->quantity));
-
-  if (bidChanged || askChanged) {
-    event_dispatcher_.publish(BookUpdateEvent(
-      order->get_symbol_id(),
-      currentBestBid.value_or(MarketData{0, 0}).price,
-      currentBestBid.value_or(MarketData{0, 0}).quantity,
-      currentBestAsk.value_or(MarketData{0, 0}).price,
-      currentBestAsk.value_or(MarketData{0, 0}).quantity
-    ));
-  }
-
+  // Process any remaining quantity
   if (order->get_quantity() > 0) {
     if (order->get_time_in_force() == TimeInForce::IOC || order->get_time_in_force() == TimeInForce::FOK) {
       LOG_DEBUG("process_order_submission: Cancelling unfilled IOC/FOK order " + std::to_string(order->get_order_id()));
@@ -198,13 +191,33 @@ void MatchingEngine::process_order_submission(std::shared_ptr<Order> order) {
       LOG_DEBUG("process_order_submission: Placing resting LIMIT order " + std::to_string(order->get_order_id()));
       place_resting_limit_order(std::static_pointer_cast<LimitOrder>(order), *book); 
     } 
-    else {
+    else { // Market orders with remaining quantity are cancelled
       LOG_DEBUG("process_order_submission: Cancelling unfilled MARKET order " + std::to_string(order->get_order_id()));
       order->set_order_status(OrderStatus::CANCELLED);
       event_dispatcher_.publish(OrderCancelledEvent(order->get_symbol_id(), order->get_order_id(), order->get_trader_id(), order->get_quantity()));
     }
   } else {
       LOG_DEBUG("process_order_submission: Order " + std::to_string(order->get_order_id()) + " fully filled.");
+  }
+  
+  // Capture book state after all changes and publish update if needed
+  auto currentBestBid = book->get_best_bid();
+  auto currentBestAsk = book->get_best_ask();
+
+  bool bidChanged = (prevBestBid.has_value() != currentBestBid.has_value()) || 
+                    (prevBestBid.has_value() && currentBestBid.has_value() && (prevBestBid->price != currentBestBid->price || prevBestBid->quantity != currentBestBid->quantity));
+
+  bool askChanged = (prevBestAsk.has_value() != currentBestAsk.has_value()) || 
+                    (prevBestAsk.has_value() && currentBestAsk.has_value() && (prevBestAsk->price != currentBestAsk->price || prevBestAsk->quantity != currentBestAsk->quantity));
+
+  if (bidChanged || askChanged) {
+    event_dispatcher_.publish(BookUpdateEvent(
+      order->get_symbol_id(),
+      currentBestBid.value_or(MarketData{0, 0}).price,
+      currentBestBid.value_or(MarketData{0, 0}).quantity,
+      currentBestAsk.value_or(MarketData{0, 0}).price,
+      currentBestAsk.value_or(MarketData{0, 0}).quantity
+    ));
   }
 }
 
@@ -267,6 +280,10 @@ void MatchingEngine::process_order_cancellation(OrderID order_id) {
 
   OrderBook* book = get_book(symbol_id);
   if (book && book->get_order(order_id)) {
+    // Capture previous best bid/ask
+    auto prevBestBid = book->get_best_bid();
+    auto prevBestAsk = book->get_best_ask();
+
     LOG_DEBUG("process_order_cancellation: Order " + std::to_string(order_id) + " found in order book. Attempting cancellation.");
     Order* order = book->get_order(order_id);
     TraderID trader_id = order->get_trader_id();
@@ -280,6 +297,26 @@ void MatchingEngine::process_order_cancellation(OrderID order_id) {
     } 
     catch (const std::invalid_argument& e) {
       LOG_DEBUG("process_order_cancellation: FAILED to cancel order " + std::to_string(order_id) + " from book: " + e.what());
+    }
+
+    // Check for changes and publish BookUpdateEvent
+    auto currentBestBid = book->get_best_bid();
+    auto currentBestAsk = book->get_best_ask();
+
+    bool bidChanged = (prevBestBid.has_value() != currentBestBid.has_value()) || 
+                      (prevBestBid.has_value() && currentBestBid.has_value() && (prevBestBid->price != currentBestBid->price || prevBestBid->quantity != currentBestBid->quantity));
+
+    bool askChanged = (prevBestAsk.has_value() != currentBestAsk.has_value()) || 
+                        (prevBestAsk.has_value() && currentBestAsk.has_value() && (prevBestAsk->price != currentBestAsk->price || prevBestAsk->quantity != currentBestAsk->quantity));
+
+    if (bidChanged || askChanged) {
+      event_dispatcher_.publish(BookUpdateEvent(
+        symbol_id,
+        currentBestBid.value_or(MarketData{0, 0}).price,
+        currentBestBid.value_or(MarketData{0, 0}).quantity,
+        currentBestAsk.value_or(MarketData{0, 0}).price,
+        currentBestAsk.value_or(MarketData{0, 0}).quantity
+      ));
     }
   }
   else {
@@ -438,11 +475,13 @@ void MatchingEngine::create_trade(Order* aggressor, Order* resting, Price tradeP
                             resting->get_order_id(), resting->get_trader_id(), resting->get_quantity()));
 
   if (aggressorRemaining == 0) {
+    event_dispatcher_.publish(OrderFilledEvent(aggressor->get_order_id(), aggressor->get_trader_id(), tradePrice));
     LOG_DEBUG("create_trade: aggressor " + std::to_string(aggressor->get_order_id()) + " filled, removing from order_id_to_symbol map");
     std::lock_guard<std::mutex> lock(order_map_mutex_);
     order_id_to_symbol_.erase(aggressor->get_order_id());
   }
   if (restingRemaining == 0) {
+    event_dispatcher_.publish(OrderFilledEvent(resting->get_order_id(), resting->get_trader_id(), tradePrice));
     LOG_DEBUG("create_trade: resting " + std::to_string(resting->get_order_id()) + " filled, removing from order_id_to_symbol map");
     std::lock_guard<std::mutex> lock(order_map_mutex_);
     order_id_to_symbol_.erase(resting->get_order_id());
@@ -531,4 +570,8 @@ void MatchingEngine::print_top_of_book(std::string symbol, int num_price_levels)
   std::cout << std::endl << "\x1b[1m" << "\033[1;33m" << symbol << "\033[0m" 
   << " Top of Orderbook: " << "\x1b[0m" << std::endl;
   if (ob != nullptr) ob->print(num_price_levels);
+}
+
+bool MatchingEngine::is_running() const {
+  return running_;
 }

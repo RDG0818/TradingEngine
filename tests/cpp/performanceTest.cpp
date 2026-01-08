@@ -22,37 +22,35 @@ class LatencyListener {
 public:
     void subscribe(EventDispatcher& dispatcher) {
         dispatcher.subscribe<OrderAcceptedEvent>([this](const OrderAcceptedEvent& event) {
-            std::lock_guard<std::mutex> lk(m_);
-            accepted_ = true;
-            cv_.notify_one();
+            accepted_.store(true, std::memory_order_release);
         });
     }
 
     void waitForAcceptance() {
-        std::unique_lock<std::mutex> lk(m_);
-        cv_.wait(lk, [this]{ return accepted_; });
+        while (!accepted_.load(std::memory_order_acquire)) {
+            // Spin-wait
+        }
     }
 
     void reset() {
-        std::lock_guard<std::mutex> lk(m_);
-        accepted_ = false;
+        accepted_.store(false, std::memory_order_release);
     }
 
 private:
-    std::mutex m_;
-    std::condition_variable cv_;
-    bool accepted_ = false;
+    std::atomic<bool> accepted_{false};
 };
 
 class LatencyBenchmarkFixture : public benchmark::Fixture {
 public:
     std::unique_ptr<EventDispatcher> dispatcher;
+    std::unique_ptr<OrderIdGenerator> order_id_generator;
     std::unique_ptr<MatchingEngine> engine;
     std::unique_ptr<LatencyListener> listener;
 
     void SetUp(const ::benchmark::State& state) override {
         dispatcher = std::make_unique<EventDispatcher>();
-        engine = std::make_unique<MatchingEngine>(*dispatcher);
+        order_id_generator = std::make_unique<OrderIdGenerator>();
+        engine = std::make_unique<MatchingEngine>(*dispatcher, *order_id_generator);
         listener = std::make_unique<LatencyListener>();
         
         listener->subscribe(*dispatcher);
@@ -80,7 +78,8 @@ BENCHMARK_F(LatencyBenchmarkFixture, BM_SubmissionLatency)(benchmark::State& sta
 static void BM_MatchingThroughput(benchmark::State& state) {
     static std::once_flag flag;
     static EventDispatcher dispatcher;
-    static MatchingEngine engine(dispatcher);
+    static OrderIdGenerator order_id_generator;
+    static MatchingEngine engine(dispatcher, order_id_generator);
     static LatencyListener listener; 
 
     std::call_once(flag, []() {

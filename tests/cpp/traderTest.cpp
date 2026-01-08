@@ -2,22 +2,39 @@
 
 #include <string>
 #include <vector>
+#include <algorithm>
 
 #include "gtest/gtest.h"
 #include "eventDispatcher.h"
 #include "matchingEngine.h"
 #include "symbolRegistry.h"
 #include "trader.h"
+#include "utils.h"
+
+// Helper for test
+Price price_from_string(std::string s) {
+    if (s.empty()) return 0;
+    s.erase(std::remove(s.begin(), s.end(), '.'), s.end());
+    try {
+        return std::stoull(s);
+    } catch (const std::invalid_argument& e) {
+        return 0;
+    }
+}
 
 class MockMatchingEngine : public MatchingEngine {
 
 public:
-
-  using MatchingEngine::MatchingEngine;
+  MockMatchingEngine(EventDispatcher& dispatcher, OrderIdGenerator& id_generator)
+    : MatchingEngine(dispatcher, id_generator) {}
 
   OrderID submit_order(const RawOrderParams& params) override {
     submitted_orders.push_back(params);
     return 1; // Return a dummy OrderID
+  }
+
+  void submit_order(std::shared_ptr<Order> order) override {
+    // Not used in this test suite
   }
 
   std::optional<MarketData> get_best_bid(SymbolID symbol_id) const override {
@@ -43,13 +60,14 @@ class TraderTest : public ::testing::Test {
 protected:
 
   EventDispatcher dispatcher;
+  OrderIdGenerator id_generator;
   MockMatchingEngine mock_engine;
   
   std::vector<std::string> symbols_ = {"AAPL", "GOOG"};
   SymbolID aapl_id_ = SymbolRegistry::get_instance().get_id("AAPL");
   SymbolID goog_id_ = SymbolRegistry::get_instance().get_id("GOOG");
 
-  TraderTest() : mock_engine(dispatcher) {}
+  TraderTest() : mock_engine(dispatcher, id_generator) {}
 };
 
 // --- Test Cases ---
@@ -106,11 +124,11 @@ TEST_F(TraderTest, MarketMakerTrader_QuotesBidAndAsk) {
   Price expected_bid = 1485000;
   Price expected_ask = 1515000;
 
-  Price actual_bid = (order1.side == Side::BUY) ? std::stoull(order1.price) * 10000 : std::stoull(order2.price) * 10000;
-  Price actual_ask = (order1.side == Side::SELL) ? std::stoull(order1.price) * 10000 : std::stoull(order2.price) * 10000;
+  Price actual_bid = (order1.side == Side::BUY) ? price_from_string(order1.price) : price_from_string(order2.price);
+  Price actual_ask = (order1.side == Side::SELL) ? price_from_string(order1.price) : price_from_string(order2.price);
 
-  EXPECT_NEAR(actual_bid, expected_bid, 15000); // Allow 0.5 price deviation
-  EXPECT_NEAR(actual_ask, expected_ask, 15000); // Allow 0.5 price deviation
+  EXPECT_NEAR(actual_bid, expected_bid, 15000); // Allow tolerance
+  EXPECT_NEAR(actual_ask, expected_ask, 15000); // Allow tolerance
 }
 
 TEST_F(TraderTest, MarketMakerTrader_AdjustsToMarket) {
@@ -132,8 +150,8 @@ TEST_F(TraderTest, MarketMakerTrader_AdjustsToMarket) {
   Price expected_bid = 1980000;
   Price expected_ask = 2020000;
   
-  Price actual_bid = (order1.side == Side::BUY) ? std::stoull(order1.price) * 10000 : std::stoull(order2.price) * 10000;
-  Price actual_ask = (order1.side == Side::SELL) ? std::stoull(order1.price) * 10000 : std::stoull(order2.price) * 10000;
+  Price actual_bid = (order1.side == Side::BUY) ? price_from_string(order1.price) : price_from_string(order2.price);
+  Price actual_ask = (order1.side == Side::SELL) ? price_from_string(order1.price) : price_from_string(order2.price);
 
   // Allow for small deviation
   EXPECT_NEAR(actual_bid, expected_bid, 15000);

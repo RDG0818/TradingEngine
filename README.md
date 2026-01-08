@@ -33,18 +33,17 @@ Talat means 'market' in Thai.
 ### Prerequisites
 - A C++ compiler that supports C++20
 - CMake (version 3.12+)
+- Python 3.10
+- Conda
 
 ### Installation
 ```bash
 git clone https://github.com/RDG0818/TradingEngine.git
 cd TradingEngine
-
-```
-
-**Build the C++ core:**
-```bash
-cmake -B build -S .
-cmake --build build
+conda create -n talat python=3.10
+conda activate talat
+pip install -r requirements.txt
+make
 ```
 
 **(Optional) Running Unit Tests:**
@@ -60,6 +59,7 @@ TODO:
 - Implement different algorithm traders (random, momentum, etc.)
 - Incorporate more of boost
 - manual trading through frontend
+- add performance to README
 
 - Integration with a visualization library for plotting equity curves and performance metrics
 - Support for options and other derivatives
