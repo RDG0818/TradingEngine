@@ -29,14 +29,16 @@ class Trader {
 
 public:
 
-  Trader(TraderType type, MatchingEngine& engine, EventDispatcher& dispatcher, TraderID trader_id, const std::vector<std::string>& symbols) 
-    : engine_(engine), dispatcher_(dispatcher), symbols_(symbols), type_(type), trader_id_(trader_id) {}
+  Trader(std::string name, TraderType type, MatchingEngine& engine, EventDispatcher& dispatcher, TraderID trader_id, const std::vector<std::string>& symbols) 
+    : name_(name), engine_(engine), dispatcher_(dispatcher), symbols_(symbols), type_(type), trader_id_(trader_id) {}
   virtual ~Trader() = default;
 
   virtual void tick() = 0;
     
   TraderType get_type() const { return type_; }
   TraderID get_id() const { return trader_id_; }
+  std::string get_name() const { return name_; }
+  void set_name(std::string name) { name_ = name; }
 
 protected:
 
@@ -48,6 +50,7 @@ private:
 
   TraderType type_;
   TraderID trader_id_;
+  std::string name_;
 
 };
 

@@ -193,6 +193,60 @@ TEST_F(TradingSystemTest, TradeExecution_FullMatch) {
     EXPECT_EQ(buyer_snapshot_after->balance, starting_balance - trade_cost);
     ASSERT_EQ(buyer_snapshot_after->positions.count(aapl_id), 1);
     EXPECT_EQ(buyer_snapshot_after->positions.at(aapl_id), trade_quantity);
-    ASSERT_EQ(buyer_snapshot_after->trade_history.size(), 1);
+    EXPECT_EQ(buyer_snapshot_after->trade_history.size(), 1);
     EXPECT_EQ(buyer_snapshot_after->trade_history.front().price, trade_price);
+}
+
+TEST_F(TradingSystemTest, SystemMetricsAndMarketSnapshotUpdate) {
+    Price starting_balance = 200000000; // $20,000.00
+    TraderID buyer_id = trading_system->create_portfolio(starting_balance);
+    TraderID seller_id = 100001; // System/automated trader ID to bypass portfolio checks
+
+    // 1. Test Latency Metric
+    // Submit an order and check if latency is recorded.
+    trading_system->submit_order(buyer_id, {.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "149.00", .quantity = 10, .trader_id = buyer_id});
+    waitForProcessing();
+
+    auto metrics = trading_system->get_system_metrics();
+    // The latency will be very small, but should be a positive value.
+    EXPECT_GT(metrics.avg_latency_ms, 0.0);
+    // It should be a very small number, testing for a reasonable upper bound
+    EXPECT_LT(metrics.avg_latency_ms, 100.0); // Expect latency < 100ms for a local system
+
+    // 2. Test Recent Trades
+    // The buy order for 10 shares at 149.00 is on the book.
+    // Submit a matching sell order to trigger a trade.
+    trading_system->submit_order(seller_id, {.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "149.00", .quantity = 5, .trader_id = seller_id});
+    waitForProcessing();
+
+    auto market_snapshot_1 = trading_system->get_market_snapshot("AAPL");
+    ASSERT_TRUE(market_snapshot_1.has_value());
+    ASSERT_EQ(market_snapshot_1->recent_trades.size(), 1);
+    EXPECT_EQ(market_snapshot_1->recent_trades.front(), 1490000); // $149.00
+    EXPECT_EQ(market_snapshot_1->last_trade_price, 1490000);
+
+    // Trigger another trade to fill the rest of the original buy order
+    trading_system->submit_order(seller_id, {.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "149.00", .quantity = 5, .trader_id = seller_id});
+    waitForProcessing(); 
+
+    auto market_snapshot_2 = trading_system->get_market_snapshot("AAPL");
+    ASSERT_TRUE(market_snapshot_2.has_value());
+    ASSERT_EQ(market_snapshot_2->recent_trades.size(), 2);
+    EXPECT_EQ(market_snapshot_2->recent_trades[0], 1490000); 
+    EXPECT_EQ(market_snapshot_2->recent_trades[1], 1490000);
+
+    // Now place a new set of trades at a different price
+    trading_system->submit_order(buyer_id, {.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::BUY, .price = "151.00", .quantity = 8, .trader_id = buyer_id});
+    waitForProcessing();
+    trading_system->submit_order(seller_id, {.symbol = "AAPL", .order_type = OrderType::LIMIT, .side = Side::SELL, .price = "151.00", .quantity = 8, .trader_id = seller_id});
+    waitForProcessing();
+
+    auto market_snapshot_3 = trading_system->get_market_snapshot("AAPL");
+    ASSERT_TRUE(market_snapshot_3.has_value());
+    ASSERT_EQ(market_snapshot_3->recent_trades.size(), 3);
+    // Trades are added to the front (LIFO)
+    EXPECT_EQ(market_snapshot_3->recent_trades[0], 1510000); // $151.00
+    EXPECT_EQ(market_snapshot_3->recent_trades[1], 1490000);
+    EXPECT_EQ(market_snapshot_3->recent_trades[2], 1490000);
+    EXPECT_EQ(market_snapshot_3->last_trade_price, 1510000);
 }

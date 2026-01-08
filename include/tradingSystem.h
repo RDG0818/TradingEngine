@@ -19,7 +19,6 @@
 #include "symbolRegistry.h"
 #include "utils.h"
 
-// --- Data structures for API getters ---
 
 struct SystemMetrics {
   int64_t orders_processed = 0;
@@ -38,9 +37,9 @@ struct MarketSnapshot {
 };
 
 struct PortfolioSnapshot {
-    Price balance = 0;
-    std::map<SymbolID, Quantity> positions;
-    std::deque<TradeExecutedEvent> trade_history;
+  Price balance = 0;
+  std::map<SymbolID, Quantity> positions;
+  std::deque<TradeExecutedEvent> trade_history;
 };
 
 
