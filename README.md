@@ -40,9 +40,12 @@ Talat means 'market' in Thai.
 ```bash
 git clone https://github.com/RDG0818/TradingEngine.git
 cd TradingEngine
+git submodule --init --recursive
 conda create -n talat python=3.10
 conda activate talat
+cd backend
 pip install -r requirements.txt
+cd ..
 make
 ```
 

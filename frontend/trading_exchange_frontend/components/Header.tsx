@@ -17,15 +17,15 @@ const Header: React.FC = () => {
   };
 
   return (
-    <header className="h-14 border-b border-neutral-800 bg-neutral-950/80 backdrop-blur-sm flex items-center justify-between px-6 sticky top-0 z-10">
+    <header className="h-14 border-b border-neutral-200 dark:border-neutral-800 bg-white/80 dark:bg-neutral-950/80 backdrop-blur-sm flex items-center justify-between px-6 sticky top-0 z-10">
       <div className="flex items-center gap-4">
         <div className="text-sm font-mono text-neutral-500">{formatTime(time)}</div>
       </div>
 
       <div className="flex items-center gap-6">
-        <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-900 border border-neutral-800">
+        <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800">
           <Server size={12} className="text-neutral-500" />
-          <span className="text-xs font-mono text-neutral-400">ENV: LOCAL_Sim</span>
+          <span className="text-xs font-mono text-neutral-600 dark:text-neutral-400">ENV: LOCAL_Sim</span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -33,7 +33,7 @@ const Header: React.FC = () => {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </div>
-            <span className="text-xs font-medium text-emerald-500 tracking-wide">LIVE – SIMULATION MODE</span>
+            <span className="text-xs font-medium text-emerald-600 dark:text-emerald-500 tracking-wide">LIVE – SIMULATION MODE</span>
         </div>
       </div>
     </header>

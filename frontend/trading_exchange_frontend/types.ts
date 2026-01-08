@@ -10,7 +10,6 @@ export interface MarketData {
     ordersProcessed: number;
     avgLatency: number;
     activeOrders: number;
-    connectedClients: number;
   }
   
   export type ExchangeMode = 'Manual Trading' | 'Simulation';

@@ -5,7 +5,7 @@ build:
 	@rm -rf build
 	@cmake -B build -S . -DPython3_EXECUTABLE=$(which python3)
 	@cmake --build build
-	@cd build && python3 -m pybind11_stubgen trading_engine_py --output-dir=. --enum-class-locations TimeInForce:trading_engine_py.TimeInForce
+	@PYTHONPATH=./backend python3 -m pybind11_stubgen trading_engine_py --output-dir=backend --enum-class-locations TimeInForce:trading_engine_py.TimeInForce
 	@echo "Build complete."
 
 test: build

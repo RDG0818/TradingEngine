@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+pybind11
+pybind11_stubgen
+

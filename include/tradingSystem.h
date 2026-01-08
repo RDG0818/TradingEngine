@@ -22,7 +22,7 @@
 
 struct SystemMetrics {
   int64_t orders_processed = 0;
-  double avg_latency_ms = 0.0; // Latency calculation is complex; skipping for now
+  double avg_latency_ms = 0.0; 
   int64_t active_orders = 0;
 };
 

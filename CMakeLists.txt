@@ -79,3 +79,8 @@ find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
 add_subdirectory(pybind11)
 pybind11_add_module(trading_engine_py src/pythonBindings.cpp)
 target_link_libraries(trading_engine_py PRIVATE core_lib Boost::boost)
+
+set_target_properties(trading_engine_py
+    PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/backend
+)
