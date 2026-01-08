@@ -24,6 +24,7 @@ include_directories(
 file(GLOB_RECURSE CORE_SOURCES ${PROJECT_SRC_DIR}/core/*.cpp)
 list(REMOVE_ITEM CORE_SOURCES "${PROJECT_SRC_DIR}/core/cli.cpp")
 add_library(core_lib STATIC ${CORE_SOURCES})
+set_target_properties(core_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(core_lib PUBLIC ${PROJECT_INCLUDE_DIR})
 
 
@@ -75,9 +76,6 @@ target_include_directories(benchmarks PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # Pybind11
 
 find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
-FetchContent_Declare(
-  pybind11
-  URL https://github.com/pybind/pybind11/archive/refs/tags/v3.0.1.zip 
-)
-FetchContent_MakeAvailable(pybind11)
+add_subdirectory(pybind11)
 pybind11_add_module(trading_engine_py src/pythonBindings.cpp)
+target_link_libraries(trading_engine_py PRIVATE core_lib Boost::boost)
