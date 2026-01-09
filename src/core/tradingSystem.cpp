@@ -33,6 +33,8 @@ TradingSystem::TradingSystem(int tick_interval_ms, const std::vector<std::string
     dispatcher_.subscribe<OrderCancelledEvent>([this](const OrderCancelledEvent& event) {
         this->on_order_cancelled(event);
     });
+
+    last_metrics_query_time_ = std::chrono::system_clock::now();
 }
 
 TradingSystem::~TradingSystem() {
@@ -74,6 +76,20 @@ SystemMetrics TradingSystem::get_system_metrics() const {
     std::lock_guard<std::mutex> lock(system_mutex_);
     SystemMetrics current_metrics = metrics_;
     current_metrics.avg_latency_ms = avg_latency_ns_ / 1e6; // Convert ns to ms
+    
+    current_metrics.event_queue_depth = engine_.get_event_queue_depth();
+
+    auto now = std::chrono::system_clock::now();
+    double time_delta_s = std::chrono::duration<double>(now - last_metrics_query_time_).count();
+
+    if (time_delta_s > 0.9) { 
+        int64_t orders_delta = metrics_.orders_processed - last_orders_processed_;
+        throughput_ = static_cast<double>(orders_delta) / time_delta_s;
+        last_orders_processed_ = metrics_.orders_processed;
+        last_metrics_query_time_ = now;
+    }
+    current_metrics.throughput = throughput_;
+
     return current_metrics;
 }
 
@@ -238,3 +254,22 @@ void TradingSystem::on_order_cancelled(const OrderCancelledEvent& event) {
         metrics_.active_orders--;
     }
 }
+
+void TradingSystem::addRandomMarketTrader(std::string name, float lambda, 
+                                          std::chrono::milliseconds tickInterval, 
+                                          Quantity quantity) {
+      manager_.addRandomMarketTrader(name, lambda, tickInterval, quantity);
+    }
+
+void TradingSystem::addRandomLimitTrader(std::string name, float lambda, 
+                                         std::chrono::milliseconds tickInterval, 
+                                         Quantity quantity, float norm_dist_var) {
+    manager_.addRandomLimitTrader(name, lambda, tickInterval, quantity, norm_dist_var);
+  }
+
+  void TradingSystem::addMarketMakerTrader(std::string name, float mu, float sigma, float spread,
+                            std::chrono::milliseconds tickInterval, 
+                            Quantity quantity, 
+                            std::unordered_map<std::string, double>& init_price) {
+    manager_.addMarketMakerTrader(name, mu, sigma, spread, tickInterval, quantity, init_price);
+  }

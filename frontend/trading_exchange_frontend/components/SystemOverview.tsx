@@ -5,7 +5,9 @@ const SystemOverview: React.FC = () => {
   const [metrics, setMetrics] = useState<SystemMetrics>({
     ordersProcessed: 0,
     avgLatency: 0.0,
-    activeOrders: 0
+    activeOrders: 0,
+    eventQueueDepth: 0,
+    throughput: 0.0
   });
 
   useEffect(() => {
@@ -40,7 +42,7 @@ const SystemOverview: React.FC = () => {
   );
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <MetricItem
             label="Orders Processed"
             value={metrics.ordersProcessed.toLocaleString()}
@@ -54,6 +56,16 @@ const SystemOverview: React.FC = () => {
         <MetricItem
             label="Active Orders"
             value={metrics.activeOrders.toString()}
+        />
+        <MetricItem
+            label="Queue Depth"
+            value={metrics.eventQueueDepth.toString()}
+            colorClass={metrics.eventQueueDepth > 100 ? 'text-amber-600 dark:text-amber-500' : 'text-neutral-800 dark:text-neutral-200'}
+        />
+        <MetricItem
+            label="Throughput"
+            value={metrics.throughput.toFixed(0)}
+            unit="ops/s"
         />
     </div>
   );

@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { LineChart, Line, ResponsiveContainer, YAxis } from 'recharts';
 import { MarketData, ChartPoint } from '../types';
+import { useSymbol } from '../context/SymbolContext';
 
 const MarketSnapshot: React.FC = () => {
+  const { availableSymbols, currentSymbol, setCurrentSymbol } = useSymbol();
   const [data, setData] = useState<MarketData>({
     bestBid: 0,
     bestAsk: 0,
@@ -15,35 +17,38 @@ const MarketSnapshot: React.FC = () => {
 
   // Fetch market data from backend
   useEffect(() => {
+    if (!currentSymbol) return;
+
     const fetchMarketData = async () => {
       try {
-        const response = await fetch('http://localhost:8000/market_snapshot'); // Your FastAPI backend address
+        const response = await fetch(`http://localhost:8000/market_snapshot?symbol=${currentSymbol}`);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         const fetchedData: MarketData = await response.json();
         setData(fetchedData);
         
-        // Update chart data using the fetched lastPrice
         setChartData(prev => {
           const newChartPoint = { time: Date.now(), price: fetchedData.lastPrice };
-          // Keep a fixed number of points for the chart, e.g., 60
           const updatedChartData = [...prev, newChartPoint].slice(-60); 
           return updatedChartData;
         });
 
       } catch (error) {
         console.error("Error fetching market snapshot:", error);
-        // Optionally, reset data or show an error state on the UI
       }
     };
 
-    // Fetch immediately on mount, and then every 800ms
     fetchMarketData();
     const interval = setInterval(fetchMarketData, 800);
 
-    return () => clearInterval(interval); // Cleanup on component unmount
-  }, []); // Empty dependency array to run once on mount for initial setup
+    return () => clearInterval(interval);
+  }, [currentSymbol]);
+
+  // Clear chart data when symbol changes
+  useEffect(() => {
+    setChartData([]);
+  }, [currentSymbol]);
 
   const isIdle = data.bestBid === 0 && data.bestAsk === 0;
   const spread = isIdle ? '0.00' : (data.bestAsk - data.bestBid).toFixed(2);
@@ -54,9 +59,25 @@ const MarketSnapshot: React.FC = () => {
     <div className="bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg p-1 h-full flex flex-col">
        <div className="p-4 border-b border-neutral-200 dark:border-neutral-700 flex justify-between items-center">
             <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">Market Snapshot</h2>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
                 <span className="text-xs font-mono text-neutral-500">TICKER:</span>
-                <span className="text-xs font-mono text-blue-500 dark:text-blue-400 font-bold">ETH-USD-PERP</span>
+                <div className="relative">
+                    <select
+                        value={currentSymbol}
+                        onChange={(e) => setCurrentSymbol(e.target.value)}
+                        className="appearance-none bg-neutral-900 border-none text-xs font-mono text-blue-500 dark:text-blue-400 font-bold pr-4 focus:outline-none"
+                        disabled={availableSymbols.length === 0}
+                    >
+                        {availableSymbols.length > 0 ? (
+                          availableSymbols.map(s => <option key={s} value={s}>{s}</option>)
+                        ) : (
+                          <option>Loading...</option>
+                        )}
+                    </select>
+                    <div className="absolute right-0 top-0 pointer-events-none">
+                        <svg className="w-3 h-3 text-neutral-500 dark:text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </div>
+                </div>
             </div>
        </div>
 
@@ -88,38 +109,30 @@ const MarketSnapshot: React.FC = () => {
             </div>
 
             {/* Data Grid */}
-            <div className="grid grid-cols-2 gap-x-8 gap-y-6">
+            <div className="grid grid-cols-6 gap-4 text-center">
                 <div>
-                    <label className="text-xs text-neutral-500 font-medium uppercase tracking-wider block mb-1">Best Bid</label>
-                    <span className="text-xl font-mono text-emerald-600 dark:text-emerald-500 tracking-tight">{isIdle ? '0.00' : data.bestBid.toFixed(2)}</span>
+                    <label className="text-[10px] text-neutral-500 dark:text-neutral-600 font-medium uppercase tracking-wider block mb-1">Best Bid</label>
+                    <span className="text-lg font-mono text-emerald-600 dark:text-emerald-500 tracking-tight">{isIdle ? '0.00' : data.bestBid.toFixed(2)}</span>
                 </div>
                 <div>
-                    <label className="text-xs text-neutral-500 font-medium uppercase tracking-wider block mb-1">Best Ask</label>
-                    <span className="text-xl font-mono text-rose-600 dark:text-rose-500 tracking-tight">{isIdle ? '0.00' : data.bestAsk.toFixed(2)}</span>
+                    <label className="text-[10px] text-neutral-500 dark:text-neutral-600 font-medium uppercase tracking-wider block mb-1">Best Ask</label>
+                    <span className="text-lg font-mono text-rose-600 dark:text-rose-500 tracking-tight">{isIdle ? '0.00' : data.bestAsk.toFixed(2)}</span>
                 </div>
                 <div>
-                    <label className="text-xs text-neutral-500 font-medium uppercase tracking-wider block mb-1">Mid Price</label>
+                    <label className="text-[10px] text-neutral-500 dark:text-neutral-600 font-medium uppercase tracking-wider block mb-1">Mid Price</label>
                     <span className="text-lg font-mono text-neutral-800 dark:text-neutral-200">{midPrice}</span>
                 </div>
                 <div>
-                    <label className="text-xs text-neutral-500 font-medium uppercase tracking-wider block mb-1">Spread</label>
+                    <label className="text-[10px] text-neutral-500 dark:text-neutral-600 font-medium uppercase tracking-wider block mb-1">Spread</label>
                     <span className="text-lg font-mono text-neutral-600 dark:text-neutral-400">{spread}</span>
                 </div>
-            </div>
-
-            <div className="h-px bg-neutral-200 dark:bg-neutral-700 w-full my-1"></div>
-
-            <div className="grid grid-cols-2 gap-4">
-                 <div>
+                <div>
                     <label className="text-[10px] text-neutral-500 dark:text-neutral-600 font-medium uppercase tracking-wider block mb-1">Volume (1m)</label>
-                    <span className="text-sm font-mono text-neutral-700 dark:text-neutral-300">{isIdle ? '0' : data.lastVolume.toLocaleString()}</span>
+                    <span className="text-lg font-mono text-neutral-700 dark:text-neutral-300">{isIdle ? '0' : data.lastVolume.toLocaleString()}</span>
                 </div>
                 <div>
                     <label className="text-[10px] text-neutral-500 dark:text-neutral-600 font-medium uppercase tracking-wider block mb-1">Last Trade</label>
-                    <div className="flex flex-col">
-                        <span className="text-sm font-mono text-neutral-800 dark:text-neutral-200">{isIdle ? '0.00' : data.lastPrice.toFixed(2)}</span>
-                        <span className="text-[10px] font-mono text-neutral-500">{isIdle ? '...' : formatTime(data.timestamp)}</span>
-                    </div>
+                    <span className="text-lg font-mono text-neutral-800 dark:text-neutral-200">{isIdle ? '0.00' : data.lastPrice.toFixed(2)}</span>
                 </div>
             </div>
        </div>

@@ -152,7 +152,13 @@ class SystemMetrics:
     def avg_latency_ms(self) -> float:
         ...
     @property
+    def event_queue_depth(self) -> int:
+        ...
+    @property
     def orders_processed(self) -> int:
+        ...
+    @property
+    def throughput(self) -> float:
         ...
 class TimeInForce:
     """

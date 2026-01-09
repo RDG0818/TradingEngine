@@ -10,6 +10,8 @@ export interface MarketData {
     ordersProcessed: number;
     avgLatency: number;
     activeOrders: number;
+    eventQueueDepth: number;
+    throughput: number;
   }
   
   export type ExchangeMode = 'Manual Trading' | 'Simulation';
@@ -19,3 +21,8 @@ export interface MarketData {
     price: number;
   }
   
+export interface PortfolioData {
+  balance: number;
+  positions: { [symbol: string]: number };
+  unrealizedPnl: number;
+}

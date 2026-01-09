@@ -8,6 +8,7 @@ import Settings from './components/pages/Settings';
 import AutomatedTraderSettings from './components/pages/AutomatedTraderSettings';
 import ManualTrading from './components/pages/ManualTrading';
 import LiveEventLog from './components/LiveEventLog';
+import Portfolio from './components/Portfolio';
 
 type Page = 'Dashboard' | 'AutomatedTraders' | 'Settings' | 'ManualTrading';
 
@@ -37,16 +38,19 @@ const App: React.FC = () => {
       default:
         return (
           <div className="max-w-6xl mx-auto flex flex-col gap-6">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-auto lg:min-h-[420px]">
-              <div className="lg:col-span-7 h-full">
-                <MarketSnapshot />
-              </div>
-              <div className="lg:col-span-5 h-full">
-                <ExchangeControls />
-              </div>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div className="lg:col-span-4 h-[380px]">
+                    <Portfolio />
+                </div>
+                <div className="lg:col-span-4 h-[380px]">
+                    <ExchangeControls />
+                </div>
+                <div className="lg:col-span-4 h-[380px]">
+                    <LiveEventLog />
+                </div>
             </div>
-            <div className="h-[240px]">
-                <LiveEventLog />
+            <div>
+                <MarketSnapshot />
             </div>
             <SystemOverview />
           </div>

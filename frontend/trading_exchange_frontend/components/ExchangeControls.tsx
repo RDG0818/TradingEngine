@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Square, Settings2, Cpu, Loader } from 'lucide-react';
-import { ExchangeMode } from '../types';
 
 const ExchangeControls: React.FC = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
-  const [mode, setMode] = useState<ExchangeMode>('Simulation');
-  const [autoTrader, setAutoTrader] = useState(true);
+  const [tickInterval, setTickInterval] = useState(10); // Default to 10ms
 
   // Fetch initial engine status on component mount
   useEffect(() => {
@@ -49,6 +47,20 @@ const ExchangeControls: React.FC = () => {
     }
   };
 
+  const handleIntervalChange = (interval: number) => {
+    setTickInterval(interval);
+    // TODO: Implement API call to backend when the endpoint is ready
+    // try {
+    //     await fetch('http://localhost:8000/engine/tick_interval', {
+    //         method: 'POST',
+    //         headers: { 'Content-Type': 'application/json' },
+    //         body: JSON.stringify({ interval_ms: interval }),
+    //     });
+    // } catch (error) {
+    //     console.error('Failed to set tick interval:', error);
+    // }
+  };
+
   const getButtonContent = () => {
     if (isToggling) {
       return (
@@ -88,10 +100,6 @@ const ExchangeControls: React.FC = () => {
           >
              {getButtonContent()}
              
-             {!isToggling && <span className={`absolute right-4 flex h-2 w-2`}>
-                <span className={`${isRunning ? 'animate-ping bg-rose-500' : 'bg-emerald-500'} absolute inline-flex h-full w-full rounded-full opacity-75`}></span>
-                <span className={`${isRunning ? 'bg-rose-500' : 'bg-emerald-500'} relative inline-flex rounded-full h-2 w-2`}></span>
-             </span>}
           </button>
           <div className="mt-3 flex justify-between items-center px-1">
              <span className="text-xs text-neutral-500 font-mono uppercase">Status</span>
@@ -106,43 +114,27 @@ const ExchangeControls: React.FC = () => {
         {/* Configuration */}
         <div className="space-y-6">
             
-            {/* Mode Selector */}
+            {/* Market Tick Interval */}
             <div className="flex flex-col gap-2">
-                <label className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider">Operational Mode</label>
-                <div className="relative">
-                    <select 
-                        value={mode}
-                        onChange={(e) => setMode(e.target.value as ExchangeMode)}
-                        className="w-full bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 text-neutral-800 dark:text-neutral-300 text-sm rounded px-3 py-2.5 focus:outline-none focus:border-neutral-400 dark:focus:border-neutral-600 appearance-none font-mono"
-                    >
-                        <option value="Simulation">Simulation Mode</option>
-                        <option value="Manual Trading">Manual Trading</option>
-                    </select>
-                    <div className="absolute right-3 top-3 pointer-events-none">
-                        <svg className="w-4 h-4 text-neutral-500 dark:text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-                    </div>
+                <label className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider">Market Tick Interval</label>
+                <div className="grid grid-cols-5 gap-2 mt-2">
+                    {[1, 5, 10, 50, 100].map(interval => (
+                        <button
+                            key={interval}
+                            onClick={() => handleIntervalChange(interval)}
+                            className={`py-2 text-xs font-mono rounded ${
+                                tickInterval === interval
+                                    ? 'bg-blue-500 text-white'
+                                    : 'bg-neutral-200 dark:bg-neutral-800 hover:bg-neutral-300 dark:hover:bg-neutral-700'
+                            }`}
+                        >
+                            {interval}ms
+                        </button>
+                    ))}
                 </div>
-            </div>
-
-            {/* Auto Trader Toggle */}
-            <div className="flex items-center justify-between p-3 bg-white dark:bg-neutral-950 rounded border border-neutral-300 dark:border-neutral-700">
-                <div className="flex items-center gap-3">
-                    <Cpu size={18} className="text-neutral-500" />
-                    <div>
-                        <span className="block text-sm text-neutral-800 dark:text-neutral-300 font-medium">Automated Traders</span>
-                        <span className="block text-[10px] text-neutral-500 dark:text-neutral-600 uppercase">Liquidity Bot Swarm</span>
-                    </div>
-                </div>
-                <button 
-                    onClick={() => setAutoTrader(!autoTrader)}
-                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${autoTrader ? 'bg-blue-200 dark:bg-blue-900/50 border border-blue-300 dark:border-blue-800' : 'bg-neutral-200 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700'}`}
-                >
-                    <span
-                        className={`${
-                        autoTrader ? 'translate-x-5 bg-blue-500 dark:bg-blue-400' : 'translate-x-1 bg-neutral-500'
-                        } inline-block h-3 w-3 transform rounded-full transition-transform duration-200`}
-                    />
-                </button>
+                <p className="text-xs text-neutral-500 dark:text-neutral-600 mt-2">
+                    Automated traders flush queued orders once per tick.
+                </p>
             </div>
         </div>
 
@@ -151,5 +143,4 @@ const ExchangeControls: React.FC = () => {
   );
 
 };
-
 export default ExchangeControls;

@@ -36,6 +36,10 @@ public:
     // but it is sufficient for a general "empty" check.
     return queue_.size_approx() == 0;
   }
+
+  size_t size() const {
+    return queue_.size_approx();
+  }
 };
 
 #endif // TRADINGENGINE_INCLUDE_EVENTQUEUE_H_

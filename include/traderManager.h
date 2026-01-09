@@ -19,9 +19,10 @@ public:
 
   ~TraderManager() {stop();};
 
-  void addRandomMarketTrader(float lambda, std::chrono::milliseconds tickInterval, Quantity quantity) {
+  void addRandomMarketTrader(std::string name, float lambda, std::chrono::milliseconds tickInterval, Quantity quantity) {
       auto random_market_trader = 
         std::make_unique<RandomMarketTrader>(
+          name,
           engine_,
           dispatcher_,
           trader_id_++, 
@@ -33,10 +34,11 @@ public:
       addTrader(std::move(random_market_trader));
     }
 
-  void addRandomLimitTrader(float lambda, std::chrono::milliseconds tickInterval, 
+  void addRandomLimitTrader(std::string name, float lambda, std::chrono::milliseconds tickInterval, 
                             Quantity quantity, float norm_dist_var) {
       auto random_limit_trader = 
         std::make_unique<RandomLimitTrader>(
+          name,
           engine_,
           dispatcher_,
           trader_id_++, 
@@ -49,12 +51,13 @@ public:
       addTrader(std::move(random_limit_trader)); 
   }
 
-  void addMarketMakerTrader(float mu, float sigma, float spread,
+  void addMarketMakerTrader(std::string name, float mu, float sigma, float spread,
                             std::chrono::milliseconds tickInterval, 
                             Quantity quantity, 
                             std::unordered_map<std::string, double>& init_price) {
     auto market_maker_trader = 
       std::make_unique<MarketMakerTrader>(
+        name,
         engine_,
         dispatcher_,
         trader_id_++, 

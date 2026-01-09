@@ -44,6 +44,7 @@ public:
   virtual std::optional<MarketData> get_best_bid(SymbolID symbol_id) const;
   void print_top_of_book(std::string symbol, int num_price_levels);
   bool is_running() const;
+  size_t get_event_queue_depth() const;
 
   void start();
   void stop();

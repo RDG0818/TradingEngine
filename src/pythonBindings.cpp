@@ -48,7 +48,9 @@ PYBIND11_MODULE(trading_engine_py, m) {
         .def(py::init<>())
         .def_readonly("orders_processed", &SystemMetrics::orders_processed)
         .def_readonly("avg_latency_ms", &SystemMetrics::avg_latency_ms)
-        .def_readonly("active_orders", &SystemMetrics::active_orders);
+        .def_readonly("active_orders", &SystemMetrics::active_orders)
+        .def_readonly("event_queue_depth", &SystemMetrics::event_queue_depth)
+        .def_readonly("throughput", &SystemMetrics::throughput);
 
     py::class_<MarketSnapshot>(m, "MarketSnapshot")
         .def(py::init<>())

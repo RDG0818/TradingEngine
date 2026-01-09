@@ -24,6 +24,8 @@ struct SystemMetrics {
   int64_t orders_processed = 0;
   double avg_latency_ms = 0.0; 
   int64_t active_orders = 0;
+  size_t event_queue_depth = 0;
+  double throughput = 0.0;
 };
 
 struct MarketSnapshot {
@@ -53,6 +55,18 @@ public:
   bool is_running() const;
   void enable_automated_traders(bool enable);
   bool are_automated_traders_enabled() const;
+
+  void addRandomMarketTrader(std::string name, float lambda, 
+                             std::chrono::milliseconds tickInterval, 
+                             Quantity quantity); 
+
+  void addRandomLimitTrader(std::string name, float lambda, std::chrono::milliseconds tickInterval, 
+                            Quantity quantity, float norm_dist_var);
+
+  void addMarketMakerTrader(std::string name, float mu, float sigma, float spread,
+                            std::chrono::milliseconds tickInterval, 
+                            Quantity quantity, 
+                            std::unordered_map<std::string, double>& init_price);
 
   SystemMetrics get_system_metrics() const;
   std::optional<MarketSnapshot> get_market_snapshot(const std::string& symbol) const;
@@ -84,6 +98,10 @@ private:
   SystemMetrics metrics_;
   std::map<SymbolID, MarketSnapshot> market_snapshots_;
   double avg_latency_ns_ = 0.0;
+  
+  mutable int64_t last_orders_processed_ = 0;
+  mutable Timestamp last_metrics_query_time_;
+  mutable double throughput_ = 0.0;
 };
 
 #endif // TRADINGENGINE_INCLUDE_TRADINGSYSTEM_H_

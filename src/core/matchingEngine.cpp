@@ -575,3 +575,7 @@ void MatchingEngine::print_top_of_book(std::string symbol, int num_price_levels)
 bool MatchingEngine::is_running() const {
   return running_;
 }
+
+size_t MatchingEngine::get_event_queue_depth() const {
+    return event_queue_.size();
+}

@@ -6,9 +6,9 @@
 
 #include "symbolRegistry.h"
 
-RandomMarketTrader::RandomMarketTrader(MatchingEngine& engine, EventDispatcher& dispatcher, TraderID trader_id, 
+RandomMarketTrader::RandomMarketTrader(std::string name, MatchingEngine& engine, EventDispatcher& dispatcher, TraderID trader_id, 
                                  float lambda, std::chrono::milliseconds time_delta, const std::vector<std::string>& symbols, int max_quantity)
-    : Trader(TraderType::LIQUIDITY, engine, dispatcher, trader_id, symbols),
+    : Trader(name, TraderType::LIQUIDITY, engine, dispatcher, trader_id, symbols),
       gen_(std::random_device{}()),
       exp_dist_{lambda},
       time_delta_s_(std::chrono::duration<double>(time_delta).count()),
@@ -42,9 +42,9 @@ void RandomMarketTrader::tick() {
     }
 }
 
-RandomLimitTrader::RandomLimitTrader(MatchingEngine& engine, EventDispatcher& dispatcher, TraderID trader_id, float lambda, 
+RandomLimitTrader::RandomLimitTrader(std::string name, MatchingEngine& engine, EventDispatcher& dispatcher, TraderID trader_id, float lambda, 
                            std::chrono::milliseconds time_delta, const std::vector<std::string>& symbols, int max_quantity, float norm_dist_var)
-    : Trader(TraderType::RANDOM, engine, dispatcher, trader_id, symbols),
+    : Trader(name, TraderType::RANDOM, engine, dispatcher, trader_id, symbols),
       gen_(std::random_device{}()),
       exp_dist_{lambda},
       time_delta_s_(std::chrono::duration<double>(time_delta).count()),
@@ -108,11 +108,11 @@ void RandomLimitTrader::tick() {
     }
 }
 
-MarketMakerTrader::MarketMakerTrader(MatchingEngine& engine, EventDispatcher& dispatcher, TraderID trader_id,
+MarketMakerTrader::MarketMakerTrader(std::string name, MatchingEngine& engine, EventDispatcher& dispatcher, TraderID trader_id,
                                      const std::vector<std::string>& symbols, double mu, double sigma, double spread,
                                      std::chrono::milliseconds time_delta, int max_quantity,
                                      const std::unordered_map<std::string, double>& initial_prices)
-    : Trader(TraderType::MARKET_MAKER, engine, dispatcher, trader_id, symbols),
+    : Trader(name, TraderType::MARKET_MAKER, engine, dispatcher, trader_id, symbols),
       gen_(std::random_device{}()),
       norm_dist_(0.0, 1.0),
       quantity_dist_(1, max_quantity),
