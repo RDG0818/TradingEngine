@@ -9,6 +9,7 @@
 RandomMarketTrader::RandomMarketTrader(std::string name, MatchingEngine& engine, EventDispatcher& dispatcher, TraderID trader_id, 
                                  float lambda, std::chrono::milliseconds time_delta, const std::vector<std::string>& symbols, int max_quantity)
     : Trader(name, TraderType::LIQUIDITY, engine, dispatcher, trader_id, symbols),
+      lambda_(lambda),
       gen_(std::random_device{}()),
       exp_dist_{lambda},
       time_delta_s_(std::chrono::duration<double>(time_delta).count()),
@@ -42,9 +43,23 @@ void RandomMarketTrader::tick() {
     }
 }
 
+std::map<std::string, double> RandomMarketTrader::get_parameters() const {
+  return {{"lambda", lambda_}};
+}
+
+void RandomMarketTrader::set_parameters(const std::map<std::string, double>& params) {
+  if (params.count("lambda")) {
+    lambda_ = params.at("lambda");
+    exp_dist_.param(std::exponential_distribution<>::param_type(lambda_));
+  }
+}
+
+
 RandomLimitTrader::RandomLimitTrader(std::string name, MatchingEngine& engine, EventDispatcher& dispatcher, TraderID trader_id, float lambda, 
                            std::chrono::milliseconds time_delta, const std::vector<std::string>& symbols, int max_quantity, float norm_dist_var)
     : Trader(name, TraderType::RANDOM, engine, dispatcher, trader_id, symbols),
+      lambda_(lambda),
+      norm_dist_var_(norm_dist_var),
       gen_(std::random_device{}()),
       exp_dist_{lambda},
       time_delta_s_(std::chrono::duration<double>(time_delta).count()),
@@ -53,7 +68,7 @@ RandomLimitTrader::RandomLimitTrader(std::string name, MatchingEngine& engine, E
       quantity_dist_(1, max_quantity),
       symbol_dist_(0, symbols.empty() ? 0 : symbols.size() - 1),
       price_dist_(1, 100),
-      norm_dist_(0, norm_dist_var) {
+      norm_dist_(0, norm_dist_var_) {
     time_until_order_s_ = exp_dist_(gen_);
 }
 
@@ -106,6 +121,21 @@ void RandomLimitTrader::tick() {
         engine_.submit_order(raw_order_params);
         time_until_order_s_ += exp_dist_(gen_);
     }
+}
+
+std::map<std::string, double> RandomLimitTrader::get_parameters() const {
+  return {{"lambda", lambda_}, {"norm_dist_var", norm_dist_var_}};
+}
+
+void RandomLimitTrader::set_parameters(const std::map<std::string, double>& params) {
+  if (params.count("lambda")) {
+    lambda_ = params.at("lambda");
+    exp_dist_.param(std::exponential_distribution<>::param_type(lambda_));
+  }
+  if (params.count("norm_dist_var")) {
+    norm_dist_var_ = params.at("norm_dist_var");
+    norm_dist_.param(std::normal_distribution<double>::param_type(0, norm_dist_var_));
+  }
 }
 
 MarketMakerTrader::MarketMakerTrader(std::string name, MatchingEngine& engine, EventDispatcher& dispatcher, TraderID trader_id,
@@ -180,3 +210,18 @@ void MarketMakerTrader::tick() {
     }
 }
 
+std::map<std::string, double> MarketMakerTrader::get_parameters() const {
+  return {{"mu", mu_}, {"sigma", sigma_}, {"spread", spread_}};
+}
+
+void MarketMakerTrader::set_parameters(const std::map<std::string, double>& params) {
+  if (params.count("mu")) {
+    mu_ = params.at("mu");
+  }
+  if (params.count("sigma")) {
+    sigma_ = params.at("sigma");
+  }
+  if (params.count("spread")) {
+    spread_ = params.at("spread");
+  }
+}

@@ -1,5 +1,8 @@
 // include/traderManager.h
 
+#include <algorithm>
+#include <mutex>
+#include <optional>
 #include "trader.h"
 
 // class to run all Traders tick function on a single thread
@@ -21,7 +24,7 @@ public:
 
   void addRandomMarketTrader(std::string name, float lambda, std::chrono::milliseconds tickInterval, Quantity quantity) {
       auto random_market_trader = 
-        std::make_unique<RandomMarketTrader>(
+        std::make_shared<RandomMarketTrader>(
           name,
           engine_,
           dispatcher_,
@@ -31,13 +34,13 @@ public:
           symbols_,
           quantity 
       );
-      addTrader(std::move(random_market_trader));
+      add_trader(std::move(random_market_trader));
     }
 
   void addRandomLimitTrader(std::string name, float lambda, std::chrono::milliseconds tickInterval, 
                             Quantity quantity, float norm_dist_var) {
       auto random_limit_trader = 
-        std::make_unique<RandomLimitTrader>(
+        std::make_shared<RandomLimitTrader>(
           name,
           engine_,
           dispatcher_,
@@ -48,7 +51,7 @@ public:
           quantity,
           norm_dist_var 
       );
-      addTrader(std::move(random_limit_trader)); 
+      add_trader(std::move(random_limit_trader)); 
   }
 
   void addMarketMakerTrader(std::string name, float mu, float sigma, float spread,
@@ -56,7 +59,7 @@ public:
                             Quantity quantity, 
                             std::unordered_map<std::string, double>& init_price) {
     auto market_maker_trader = 
-      std::make_unique<MarketMakerTrader>(
+      std::make_shared<MarketMakerTrader>(
         name,
         engine_,
         dispatcher_,
@@ -69,8 +72,40 @@ public:
         quantity,
         init_price
     );
-    addTrader(std::move(market_maker_trader));
+    add_trader(std::move(market_maker_trader));
   }
+
+  bool remove_trader(const std::string& name) {
+    std::lock_guard<std::mutex> lock(traders_mutex_);
+    auto it = std::remove_if(traders_.begin(), traders_.end(), 
+      [&](const auto& trader) { return trader->get_name() == name; });
+
+    if (it != traders_.end()) {
+      traders_.erase(it, traders_.end());
+      return true;
+    }
+    return false;
+  }
+
+  std::optional<std::map<std::string, double>> get_trader_parameters(const std::string& name) {
+    std::lock_guard<std::mutex> lock(traders_mutex_);
+    Trader* trader = get_trader(name);
+    if (trader) {
+      return trader->get_parameters();
+    }
+    return std::nullopt;
+  }
+
+  bool set_trader_parameters(const std::string& name, 
+      const std::map<std::string, double>& params) {
+        std::lock_guard<std::mutex> lock(traders_mutex_);
+        Trader* trader = get_trader(name);
+        if (trader) {
+          trader->set_parameters(params);
+          return true;
+        }
+        return false;
+      }
 
   void start() {
     bool expected = false;
@@ -97,10 +132,11 @@ private:
   EventDispatcher& dispatcher_;
   std::chrono::milliseconds tick_interval_;
   std::vector<std::string> symbols_;
-  std::vector<std::unique_ptr<Trader>> traders_;
+  std::vector<std::shared_ptr<Trader>> traders_;
   std::atomic<bool> running_{false};
   std::atomic<TraderID> trader_id_ = 100000;
   std::thread thread_;
+  mutable std::mutex traders_mutex_;
 
   std::random_device rd;
   std::mt19937 gen;
@@ -114,8 +150,19 @@ private:
     }
   };
 
-  void addTrader(std::unique_ptr<Trader> trader) {
+  void add_trader(std::shared_ptr<Trader> trader) {
     traders_.push_back(std::move(trader));
   };
+
+  Trader* get_trader(const std::string& name) {
+    auto it = std::find_if(traders_.begin(), traders_.end(), 
+      [&](const auto& trader) { return trader->get_name() == name; });
+    
+    if (it != traders_.end()) {
+      return it->get();
+    }
+    return nullptr;
+  }
+
 
 };

@@ -3,6 +3,7 @@ Python bindings for the trading engine
 """
 from __future__ import annotations
 import collections.abc
+import datetime
 import typing
 __all__: list[str] = ['BUY', 'FOK', 'GTC', 'IOC', 'LIMIT', 'MARKET', 'MarketSnapshot', 'OrderType', 'PortfolioSnapshot', 'RawOrderParams', 'SELL', 'STOP_LIMIT', 'STOP_MARKET', 'Side', 'SystemMetrics', 'TimeInForce', 'TradeExecutedEvent', 'TradingSystem']
 class MarketSnapshot:
@@ -235,6 +236,12 @@ class TradeExecutedEvent:
         ...
 class TradingSystem:
     def __init__(self, tick_interval_ms: typing.SupportsInt | typing.SupportsIndex, symbols: collections.abc.Sequence[str]) -> None:
+        ...
+    def add_market_maker_trader(self, arg0: str, arg1: typing.SupportsFloat | typing.SupportsIndex, arg2: typing.SupportsFloat | typing.SupportsIndex, arg3: typing.SupportsFloat | typing.SupportsIndex, arg4: datetime.timedelta, arg5: typing.SupportsInt | typing.SupportsIndex, arg6: collections.abc.Mapping[str, typing.SupportsFloat | typing.SupportsIndex]) -> None:
+        ...
+    def add_random_limit_trader(self, arg0: str, arg1: typing.SupportsFloat | typing.SupportsIndex, arg2: datetime.timedelta, arg3: typing.SupportsInt | typing.SupportsIndex, arg4: typing.SupportsFloat | typing.SupportsIndex) -> None:
+        ...
+    def add_random_market_trader(self, arg0: str, arg1: typing.SupportsFloat | typing.SupportsIndex, arg2: datetime.timedelta, arg3: typing.SupportsInt | typing.SupportsIndex) -> None:
         ...
     def are_automated_traders_enabled(self) -> bool:
         ...

@@ -18,7 +18,7 @@ const LiveEventLog: React.FC = () => {
 
   return (
     <div className="bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg p-1 h-full flex flex-col">
-      <div className="p-4 border-b border-neutral-200 dark:border-neutral-700">
+      <div className="p-4 border-b border-neutral-200 dark:border-neutral-700 flex justify-center items-center">
         <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">Live Event Log</h2>
       </div>
       <div className="p-4 flex-1 overflow-y-auto no-scrollbar">

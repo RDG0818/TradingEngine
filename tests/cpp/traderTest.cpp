@@ -75,7 +75,7 @@ protected:
 TEST_F(TraderTest, RandomMarketTrader_SubmitsMarketOrder) {
   float lambda = 10.0; 
   auto time_delta = std::chrono::seconds(1);
-  RandomMarketTrader trader(mock_engine, dispatcher, 1, lambda, time_delta, symbols_, 5);
+  RandomMarketTrader trader("rmt", mock_engine, dispatcher, 1, lambda, time_delta, symbols_, 5);
 
   trader.tick();
 
@@ -88,7 +88,7 @@ TEST_F(TraderTest, RandomMarketTrader_SubmitsMarketOrder) {
 TEST_F(TraderTest, RandomLimitTrader_SubmitsLimitOrder) {
   float lambda = 10.0;
   auto time_delta = std::chrono::seconds(1);
-  RandomLimitTrader trader(mock_engine, dispatcher, 2, lambda, time_delta, symbols_, 10, 0.05);
+  RandomLimitTrader trader("rlt", mock_engine, dispatcher, 2, lambda, time_delta, symbols_, 10, 0.05);
 
   // Set a mock book where the best bid is 100.00
   mock_engine.set_mock_bbo(MarketData{1000000, 100}, MarketData{1010000, 100});
@@ -105,7 +105,7 @@ TEST_F(TraderTest, RandomLimitTrader_SubmitsLimitOrder) {
 TEST_F(TraderTest, MarketMakerTrader_QuotesBidAndAsk) {
   auto time_delta = std::chrono::milliseconds(100);
   std::unordered_map<std::string, double> initial_prices = {{"AAPL", 150.0}};
-  MarketMakerTrader trader(mock_engine, dispatcher, 3, {"AAPL"}, 0.0, 0.001, 0.01, time_delta, 10, initial_prices);
+  MarketMakerTrader trader("mmt", mock_engine, dispatcher, 3, {"AAPL"}, 0.0, 0.001, 0.01, time_delta, 10, initial_prices);
 
   trader.tick();
 
@@ -134,7 +134,7 @@ TEST_F(TraderTest, MarketMakerTrader_QuotesBidAndAsk) {
 TEST_F(TraderTest, MarketMakerTrader_AdjustsToMarket) {
   auto time_delta = std::chrono::milliseconds(100);
   std::unordered_map<std::string, double> initial_prices = {{"AAPL", 150.0}};
-  MarketMakerTrader trader(mock_engine, dispatcher, 3, {"AAPL"}, 0.0, 0.001, 0.01, time_delta, 10, initial_prices);
+  MarketMakerTrader trader("mmt", mock_engine, dispatcher, 3, {"AAPL"}, 0.0, 0.001, 0.01, time_delta, 10, initial_prices);
 
   mock_engine.set_mock_bbo(MarketData{1990000, 100}, MarketData{2010000, 100});
 

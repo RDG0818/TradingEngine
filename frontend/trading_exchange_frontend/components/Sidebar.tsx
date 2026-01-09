@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Activity, Zap, BarChart3, Settings, Database, TrendingUp, Bot } from 'lucide-react';
+import { LayoutDashboard, Activity, Zap, BarChart3, Settings, Database, Bot } from 'lucide-react';
 
 type Page = 'Dashboard' | 'AutomatedTraders' | 'Settings' | 'ManualTrading';
 
@@ -7,6 +7,16 @@ interface SidebarProps {
   currentPage: Page;
   setCurrentPage: (page: Page) => void;
 }
+
+const AnimatedLogo = () => (
+    <div className="w-8 h-8 flex items-center justify-center">
+        <Zap 
+            className="text-emerald-500"
+            size={24}
+            style={{ animation: 'animate-zap 4s infinite ease-in-out' }} 
+        />
+    </div>
+);
 
 const Sidebar: React.FC<SidebarProps> = ({ currentPage, setCurrentPage }) => {
   const navItems = [
@@ -27,10 +37,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, setCurrentPage }) => {
     <aside className="w-16 lg:w-64 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex flex-col justify-between h-full transition-all duration-300">
       <div className="flex flex-col py-6">
         <div className="px-6 mb-8 flex items-center gap-3">
-            <div className="w-8 h-8 rounded bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center border border-neutral-200 dark:border-neutral-700">
-                <TrendingUp size={16} className="text-emerald-500" />
-            </div>
-            <span className="hidden lg:block font-bold tracking-tight text-neutral-800 dark:text-neutral-100">Talat</span>
+            <AnimatedLogo />
+            <span className="hidden lg:block font-mono text-xl font-bold tracking-tighter bg-gradient-to-r from-emerald-500 to-blue-500 bg-clip-text text-transparent">
+                Talat
+            </span>
         </div>
 
         <nav className="flex flex-col gap-1 px-3">

@@ -57,9 +57,9 @@ const MarketSnapshot: React.FC = () => {
 
   return (
     <div className="bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg p-1 h-full flex flex-col">
-       <div className="p-4 border-b border-neutral-200 dark:border-neutral-700 flex justify-between items-center">
+       <div className="p-4 border-b border-neutral-200 dark:border-neutral-700 flex justify-center items-center relative">
             <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">Market Snapshot</h2>
-            <div className="flex items-center gap-2">
+            <div className="absolute right-4 flex items-center gap-2">
                 <span className="text-xs font-mono text-neutral-500">TICKER:</span>
                 <div className="relative">
                     <select

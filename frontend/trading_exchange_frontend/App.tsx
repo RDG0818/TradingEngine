@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import MarketSnapshot from './components/MarketSnapshot';
-import ExchangeControls from './components/ExchangeControls';
 import SystemOverview from './components/SystemOverview';
 import Settings from './components/pages/Settings';
 import AutomatedTraderSettings from './components/pages/AutomatedTraderSettings';
@@ -39,13 +38,10 @@ const App: React.FC = () => {
         return (
           <div className="max-w-6xl mx-auto flex flex-col gap-6">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                <div className="lg:col-span-4 h-[380px]">
+                <div className="lg:col-span-6 h-[380px]">
                     <Portfolio />
                 </div>
-                <div className="lg:col-span-4 h-[380px]">
-                    <ExchangeControls />
-                </div>
-                <div className="lg:col-span-4 h-[380px]">
+                <div className="lg:col-span-6 h-[380px]">
                     <LiveEventLog />
                 </div>
             </div>
@@ -63,7 +59,7 @@ const App: React.FC = () => {
       <Sidebar currentPage={currentPage} setCurrentPage={setCurrentPage} />
       <div className="flex-1 flex flex-col min-w-0">
         <Header />
-        <main className="flex-1 overflow-y-auto p-4 lg:p-8 no-scrollbar">
+        <main className="flex-1 overflow-y-hidden p-4 lg:p-8 no-scrollbar">
           {renderPage()}
         </main>
       </div>

@@ -40,6 +40,9 @@ public:
   std::string get_name() const { return name_; }
   void set_name(std::string name) { name_ = name; }
 
+  virtual std::map<std::string, double> get_parameters() const = 0;
+  virtual void set_parameters(const std::map<std::string, double>& params) = 0;
+
 protected:
 
   MatchingEngine& engine_;
@@ -65,6 +68,8 @@ public:
     float lambda, std::chrono::milliseconds time_delta, const std::vector<std::string>& symbols, int max_quantity);
 
   void tick() override;
+  std::map<std::string, double> get_parameters() const override;
+  void set_parameters(const std::map<std::string, double>& params) override;
 
 private:
 
@@ -72,6 +77,7 @@ private:
   std::exponential_distribution<> exp_dist_;
   double time_delta_s_;
   double time_until_order_s_;
+  double lambda_;
 
   std::uniform_int_distribution<int> side_dist_;
   std::uniform_int_distribution<int> quantity_dist_;
@@ -89,6 +95,8 @@ public:
     std::chrono::milliseconds time_delta, const std::vector<std::string>& symbols, int max_quantity, float norm_dist_var);
     
   void tick() override;
+  std::map<std::string, double> get_parameters() const override;
+  void set_parameters(const std::map<std::string, double>& params) override;
 
 private:
 
@@ -96,6 +104,8 @@ private:
   std::exponential_distribution<> exp_dist_;
   double time_delta_s_;
   double time_until_order_s_;
+  double lambda_;
+  double norm_dist_var_;
 
   std::uniform_int_distribution<int> side_dist_;
   std::uniform_int_distribution<int> quantity_dist_;
@@ -118,6 +128,8 @@ public:
     const std::unordered_map<std::string, double>& initial_prices);
 
   void tick() override;
+  std::map<std::string, double> get_parameters() const override;
+  void set_parameters(const std::map<std::string, double>& params) override;
 
 private:
 

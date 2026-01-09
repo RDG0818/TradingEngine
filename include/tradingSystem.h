@@ -56,14 +56,14 @@ public:
   void enable_automated_traders(bool enable);
   bool are_automated_traders_enabled() const;
 
-  void addRandomMarketTrader(std::string name, float lambda, 
+  void add_random_market_trader(std::string name, float lambda, 
                              std::chrono::milliseconds tickInterval, 
                              Quantity quantity); 
 
-  void addRandomLimitTrader(std::string name, float lambda, std::chrono::milliseconds tickInterval, 
+  void add_random_limit_trader(std::string name, float lambda, std::chrono::milliseconds tickInterval, 
                             Quantity quantity, float norm_dist_var);
 
-  void addMarketMakerTrader(std::string name, float mu, float sigma, float spread,
+  void add_market_maker_trader(std::string name, float mu, float sigma, float spread,
                             std::chrono::milliseconds tickInterval, 
                             Quantity quantity, 
                             std::unordered_map<std::string, double>& init_price);

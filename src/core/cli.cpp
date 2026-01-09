@@ -52,6 +52,7 @@ int main() {
     int i = 0;
     for (; i < numLiquidTraders; i++) {
         manager.addRandomMarketTrader(
+            "rmt",
             static_cast<float>(lambda_dist(gen)),
             tickInterval,
             10
@@ -60,6 +61,7 @@ int main() {
 
     for (; i < numLiquidTraders + numRandomTraders; i++) {
         manager.addRandomLimitTrader(
+            "rlt",
             static_cast<float>(lambda_dist(gen)),
             tickInterval,
             10,
@@ -69,6 +71,7 @@ int main() {
 
     for (; i < numLiquidTraders + numRandomTraders + numMarketMakerTraders; i++) {
         manager.addMarketMakerTrader(
+            "mmt",
             0.0,
             0.025,
             0.001,

@@ -255,19 +255,19 @@ void TradingSystem::on_order_cancelled(const OrderCancelledEvent& event) {
     }
 }
 
-void TradingSystem::addRandomMarketTrader(std::string name, float lambda, 
+void TradingSystem::add_random_market_trader(std::string name, float lambda, 
                                           std::chrono::milliseconds tickInterval, 
                                           Quantity quantity) {
       manager_.addRandomMarketTrader(name, lambda, tickInterval, quantity);
     }
 
-void TradingSystem::addRandomLimitTrader(std::string name, float lambda, 
+void TradingSystem::add_random_limit_trader(std::string name, float lambda, 
                                          std::chrono::milliseconds tickInterval, 
                                          Quantity quantity, float norm_dist_var) {
     manager_.addRandomLimitTrader(name, lambda, tickInterval, quantity, norm_dist_var);
   }
 
-  void TradingSystem::addMarketMakerTrader(std::string name, float mu, float sigma, float spread,
+  void TradingSystem::add_market_maker_trader(std::string name, float mu, float sigma, float spread,
                             std::chrono::milliseconds tickInterval, 
                             Quantity quantity, 
                             std::unordered_map<std::string, double>& init_price) {

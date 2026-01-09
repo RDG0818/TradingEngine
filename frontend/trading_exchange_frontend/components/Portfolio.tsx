@@ -56,9 +56,8 @@ const Portfolio: React.FC = () => {
 
     return (
         <div className="bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg p-1 h-full flex flex-col">
-            <div className="p-4 border-b border-neutral-200 dark:border-neutral-700 flex justify-between items-center">
+            <div className="p-4 border-b border-neutral-200 dark:border-neutral-700 flex justify-center items-center">
                 <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">My Portfolio</h2>
-                <Briefcase size={16} className="text-neutral-500 dark:text-neutral-600" />
             </div>
 
             <div className="p-5 flex-1 flex flex-col gap-5">
@@ -75,11 +74,11 @@ const Portfolio: React.FC = () => {
                     <>
                         {/* Key metrics */}
                         <div className="grid grid-cols-2 gap-4">
-                            <div>
+                            <div className="text-center">
                                 <label className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider block mb-1">Total Balance</label>
                                 <span className="text-xl font-mono text-neutral-800 dark:text-neutral-200">{formatCurrency(portfolio.balance)}</span>
                             </div>
-                            <div>
+                            <div className="text-center">
                                 <label className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider block mb-1">Unrealized P/L</label>
                                 <span className={`text-xl font-mono ${PnlColor}`}>
                                     {portfolio.unrealizedPnl >= 0 ? '+' : ''}{formatCurrency(portfolio.unrealizedPnl)}

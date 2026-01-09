@@ -59,6 +59,13 @@ make
 ## Future Work
 
 TODO:
+- Traders need a better system of adding and removing them
+  - Have a map of names, and dedicated function for removing by name
+  - also float this up to the backend and frontend (so user can special them)
+  - also have a way to set each parameter of a trader
+- the tick interval thing on the frontend needs logic in the backend
+- authentification needs to be added
+
 - Implement different algorithm traders (random, momentum, etc.)
 - Incorporate more of boost
 - manual trading through frontend
