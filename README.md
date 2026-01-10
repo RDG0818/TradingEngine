@@ -67,6 +67,8 @@ TODO:
 
 - Live Event Log integration and general logging for events
 
+- Postgres for authentification and logging user stats/state/metrics
+
 - Websockets for the candlestick data on the manual trading page
   - make logic for post requests on the orders
 
@@ -87,12 +89,6 @@ TODO:
 - Incorporate more of boost
 - manual trading through frontend
 - add performance to README
-
-- Integration with a visualization library for plotting equity curves and performance metrics
-- Support for options and other derivatives
-- Support for live paper trading on crypto
-- Optimizations for faster high frequency trading
-- examples of portfolio optimization and advanced trading strategies
 
 ## License
 This project is licensed under the MIT License - see the `License.md` file for details.
