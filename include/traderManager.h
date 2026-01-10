@@ -22,7 +22,7 @@ public:
 
   ~TraderManager() {stop();};
 
-  void addRandomMarketTrader(std::string name, float lambda, std::chrono::milliseconds tickInterval, Quantity quantity) {
+  bool addRandomMarketTrader(std::string name, float lambda, Quantity quantity) {
       auto random_market_trader = 
         std::make_shared<RandomMarketTrader>(
           name,
@@ -30,14 +30,14 @@ public:
           dispatcher_,
           trader_id_++, 
           lambda,
-          tickInterval,
+          tick_interval_,
           symbols_,
           quantity 
       );
-      add_trader(std::move(random_market_trader));
+      return add_trader(std::move(random_market_trader));
     }
 
-  void addRandomLimitTrader(std::string name, float lambda, std::chrono::milliseconds tickInterval, 
+  bool addRandomLimitTrader(std::string name, float lambda, 
                             Quantity quantity, float norm_dist_var) {
       auto random_limit_trader = 
         std::make_shared<RandomLimitTrader>(
@@ -46,18 +46,16 @@ public:
           dispatcher_,
           trader_id_++, 
           lambda,
-          tickInterval,
+          tick_interval_,
           symbols_,
           quantity,
           norm_dist_var 
       );
-      add_trader(std::move(random_limit_trader)); 
+      return add_trader(std::move(random_limit_trader)); 
   }
 
-  void addMarketMakerTrader(std::string name, float mu, float sigma, float spread,
-                            std::chrono::milliseconds tickInterval, 
-                            Quantity quantity, 
-                            std::unordered_map<std::string, double>& init_price) {
+  bool addMarketMakerTrader(std::string name, float mu, float sigma, float spread,
+                            Quantity quantity, std::unordered_map<std::string, double>& init_price) {
     auto market_maker_trader = 
       std::make_shared<MarketMakerTrader>(
         name,
@@ -68,11 +66,11 @@ public:
         mu,
         sigma,
         spread,
-        tickInterval,
+        tick_interval_,
         quantity,
         init_price
     );
-    add_trader(std::move(market_maker_trader));
+    return add_trader(std::move(market_maker_trader));
   }
 
   bool remove_trader(const std::string& name) {
@@ -105,7 +103,29 @@ public:
           return true;
         }
         return false;
-      }
+  }
+
+  int get_tick_interval() const {
+    std::lock_guard<std::mutex> lock(traders_mutex_);
+    return tick_interval_.count();
+  }
+
+  bool set_tick_interval(int tick_length_ms) {
+    std::lock_guard<std::mutex> lock(traders_mutex_);
+    if (tick_length_ms <= 0) {
+      // You might want to log an error here, e.g., LOG_ERROR("Tick interval must be positive.");
+      return false; // Invalid tick length
+    }
+
+    auto new_interval = std::chrono::milliseconds(tick_length_ms);
+    tick_interval_ = new_interval; 
+
+    for (const auto& trader : traders_) {
+      trader->update_tick_interval(new_interval);
+    }
+
+    return true;
+  }
 
   void start() {
     bool expected = false;
@@ -143,15 +163,32 @@ private:
 
   void run() {
     while (running_) {
-      for (auto& trader : traders_) {
+      std::vector<std::shared_ptr<Trader>> traders_copy;
+      std::chrono::milliseconds current_tick_interval; // Local copy for sleep_for
+      {
+        std::lock_guard<std::mutex> lock(traders_mutex_);
+        traders_copy = traders_; // Make a copy under lock
+        current_tick_interval = tick_interval_; // Get current interval under lock
+      }
+
+      for (auto& trader : traders_copy) {
         trader->tick();
       }
-      std::this_thread::sleep_for(tick_interval_);
+      std::this_thread::sleep_for(current_tick_interval); // Use the local copy
     }
   };
 
-  void add_trader(std::shared_ptr<Trader> trader) {
+  bool add_trader(std::shared_ptr<Trader> trader) {
+    std::lock_guard<std::mutex> lock(traders_mutex_);
+    auto it = std::find_if(traders_.begin(), traders_.end(),
+      [&](const auto& existing_trader) { return existing_trader->get_name() == trader->get_name(); });
+
+    if (it != traders_.end()) {
+      return false; // Name already exists
+    }
+
     traders_.push_back(std::move(trader));
+    return true;
   };
 
   Trader* get_trader(const std::string& name) {

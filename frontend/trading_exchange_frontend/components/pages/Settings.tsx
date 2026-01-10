@@ -1,39 +1,58 @@
 import React from 'react';
 
-interface SettingsProps {
-  theme: string;
-  setTheme: (theme: string) => void;
-}
+const Settings: React.FC = () => {
+  const handleResetBalance = () => {
+    // TODO: Implement API call to reset balance
+    console.log("Resetting balance...");
+    alert("Trader balance has been reset.");
+  }
 
-const Settings: React.FC<SettingsProps> = ({ theme, setTheme }) => {
-  const toggleTheme = () => {
-    setTheme(theme === 'dark' ? 'light' : 'dark');
-  };
+  const handleResetSystem = () => {
+    // TODO: Implement API call to reset system
+    console.warn("Resetting system...");
+    if (confirm("Are you sure you want to reset the entire system? This action cannot be undone.")) {
+      alert("System has been reset.");
+    }
+  }
 
   return (
     <div className="p-4 lg:p-8">
-      <h1 className="text-2xl font-bold text-neutral-800 dark:text-white">Settings</h1>
-      <div className="mt-6 max-w-md">
-        <div className="flex items-center justify-between p-4 bg-neutral-100 dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-800">
+      <h1 className="text-2xl font-bold text-neutral-100 mb-6">Settings</h1>
+      <div className="max-w-xl space-y-6">
+        {/* Account Settings */}
+        <div className="bg-neutral-950/70 border border-white/5 rounded-lg p-4 flex items-center justify-between">
           <div>
-            <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">Theme</span>
-            <span className="block text-xs text-neutral-500 dark:text-neutral-400">
-              Switch between light and dark mode.
-            </span>
+            <h3 className="text-sm font-medium text-neutral-200">Reset Trader Balance</h3>
+            <p className="text-xs text-neutral-500 mt-1">
+              Resets your portfolio, positions, and PnL to their default state.
+            </p>
           </div>
           <button
-            onClick={toggleTheme}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-              theme === 'dark' ? 'bg-blue-600' : 'bg-neutral-300'
-            }`}
+            onClick={handleResetBalance}
+            className="px-4 py-1.5 text-xs font-semibold bg-amber-600/80 text-white rounded-md hover:bg-amber-600 transition-colors"
           >
-            <span
-              className={`${
-                theme === 'dark' ? 'translate-x-6' : 'translate-x-1'
-              } inline-block h-4 w-4 transform rounded-full bg-white transition-transform`}
-            />
+            Reset Balance
           </button>
         </div>
+        
+        {/* System Settings - Danger Zone */}
+        <div className="bg-neutral-950/70 border border-rose-500/20 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+                <div>
+                    <h3 className="text-sm font-medium text-rose-400">Danger Zone: Reset System</h3>
+                    <p className="text-xs text-neutral-500 mt-1 max-w-md">
+                        Warning: This will clear all orders, events, and metrics across the entire exchange. This action cannot be undone.
+                    </p>
+                </div>
+                <button
+                    onClick={handleResetSystem}
+                    className="px-4 py-1.5 text-xs font-semibold bg-rose-600/80 text-white rounded-md hover:bg-rose-600 transition-colors"
+                >
+                    Reset System
+                </button>
+            </div>
+        </div>
+
       </div>
     </div>
   );

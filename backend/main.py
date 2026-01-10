@@ -9,7 +9,7 @@ import time
 trading_system: Optional[trading_engine_py.TradingSystem] = None
 default_trader_id: Optional[int] = None
 
-SYMBOLS = ["ETH-USD-PERP", "BTC-USD-SPOT"] # hardcoded for now
+SYMBOLS = ["SPY", "QQQ"]
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -18,8 +18,28 @@ async def lifespan(app: FastAPI):
     print("TradingSystem singleton instance created.")
 
     if trading_system:
-        default_trader_id = trading_system.create_portfolio(1000000)
+        default_trader_id = trading_system.create_portfolio(100000000) # Start with M
         print(f"Default portfolio created with trader_id: {default_trader_id}")
+
+    trading_system.add_random_limit_trader(
+        "RandomLimit-Alpha",
+         5.0,
+         10,
+         2.0
+    )
+    trading_system.add_random_market_trader(
+        "RandomMarket-Beta",
+         5.0,
+         10
+    )
+    trading_system.add_market_maker_trader(
+        "MarketMaker-Gamma",
+          0.0,
+          0.025,
+          0.001,
+          10,
+          {"SPY": 540.00, "QQQ": 475.00}
+    )
 
     trading_system.start()
     print("TradingSystem singleton instance started.")
@@ -32,11 +52,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # CORS configuration
-
-origins = [
-    "http://localhost",
-    "http://localhost:3000",
-]
+origins = [ "http://localhost", "http://localhost:3000" ]
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,6 +84,10 @@ def get_engine_status():
     is_running = trading_system.is_running() if trading_system else False
     return {"isRunning": is_running}
 
+@app.post("/agent/create_automated_trader")
+def create_automated_trader():
+    pass
+
 # Data Endpoints
 
 @app.get("/")
@@ -92,20 +112,15 @@ def get_system_metrics():
     }
 
 @app.get("/market_snapshot")
-def get_market_snapshot_data(symbol: str = "ETH-USD-PERP"):
-    cpp_snapshot = trading_system.get_market_snapshot(symbol) if trading_system else None
+def get_market_snapshot_data(symbol: str = ""):
+    target_symbol = symbol if symbol else SYMBOLS[0]
+    cpp_snapshot = trading_system.get_market_snapshot(target_symbol) if trading_system else None
     if cpp_snapshot is None:
-        return {
-            "bestBid": 0,
-            "bestAsk": 0,
-            "lastPrice": 0,
-            "lastVolume": 0,
-            "timestamp": int(time.time() * 1000)
-        }
+        return { "bestBid": 0, "bestAsk": 0, "lastPrice": 0, "lastVolume": 0, "timestamp": int(time.time() * 1000) }
     return {
-        "bestBid": cpp_snapshot.best_bid,
-        "bestAsk": cpp_snapshot.best_ask,
-        "lastPrice": cpp_snapshot.last_trade_price,
+        "bestBid": round(cpp_snapshot.best_bid/10000, 2),
+        "bestAsk": round(cpp_snapshot.best_ask/10000, 2),
+        "lastPrice": round(cpp_snapshot.last_trade_price/10000, 2),
         "lastVolume": cpp_snapshot.last_trade_quantity,
         "timestamp": int(time.time() * 1000)
     }
@@ -121,11 +136,7 @@ def get_portfolio_snapshot_data(trader_id: int):
 
     cpp_snapshot = trading_system.get_portfolio_snapshot(trader_id)
     if cpp_snapshot is None:
-        return {
-            "balance": 0,
-            "positions": {},
-            "unrealizedPnl": 0
-        }
+        return { "balance": 0, "positions": {}, "unrealizedPnl": 0 }
 
     symbols = trading_system.get_all_symbols()
     positions_with_symbols = {}

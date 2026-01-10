@@ -43,6 +43,10 @@ void RandomMarketTrader::tick() {
     }
 }
 
+void RandomMarketTrader::update_tick_interval(std::chrono::milliseconds new_interval) {
+  time_delta_s_ = std::chrono::duration<double>(new_interval).count();
+}
+
 std::map<std::string, double> RandomMarketTrader::get_parameters() const {
   return {{"lambda", lambda_}};
 }
@@ -121,6 +125,10 @@ void RandomLimitTrader::tick() {
         engine_.submit_order(raw_order_params);
         time_until_order_s_ += exp_dist_(gen_);
     }
+}
+
+void RandomLimitTrader::update_tick_interval(std::chrono::milliseconds new_interval) {
+  time_delta_s_ = std::chrono::duration<double>(new_interval).count();
 }
 
 std::map<std::string, double> RandomLimitTrader::get_parameters() const {
@@ -208,6 +216,10 @@ void MarketMakerTrader::tick() {
             engine_.submit_order(sell_rop);
         }
     }
+}
+
+void MarketMakerTrader::update_tick_interval(std::chrono::milliseconds new_interval) {
+  dt_ = std::chrono::duration<double>(new_interval).count();
 }
 
 std::map<std::string, double> MarketMakerTrader::get_parameters() const {

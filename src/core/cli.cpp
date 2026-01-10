@@ -52,18 +52,16 @@ int main() {
     int i = 0;
     for (; i < numLiquidTraders; i++) {
         manager.addRandomMarketTrader(
-            "rmt",
+            std::to_string(i),
             static_cast<float>(lambda_dist(gen)),
-            tickInterval,
             10
         );
     }
 
     for (; i < numLiquidTraders + numRandomTraders; i++) {
         manager.addRandomLimitTrader(
-            "rlt",
+            std::to_string(i),
             static_cast<float>(lambda_dist(gen)),
-            tickInterval,
             10,
             0.15
         );
@@ -71,11 +69,10 @@ int main() {
 
     for (; i < numLiquidTraders + numRandomTraders + numMarketMakerTraders; i++) {
         manager.addMarketMakerTrader(
-            "mmt",
+            std::to_string(i),
             0.0,
             0.025,
             0.001,
-            tickInterval,
             10,
             initialPrices
         );

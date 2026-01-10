@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Briefcase } from 'lucide-react';
 import { PortfolioData } from '../types';
 
 const Portfolio: React.FC = () => {
@@ -10,23 +9,15 @@ const Portfolio: React.FC = () => {
     useEffect(() => {
         const fetchPortfolio = async () => {
             try {
-                // First get the default trader ID
                 const idResponse = await fetch('http://localhost:8000/trader/default_id');
-                if (!idResponse.ok) {
-                    throw new Error('Failed to fetch default trader ID');
-                }
+                if (!idResponse.ok) throw new Error('Failed to fetch default trader ID');
                 const { traderId } = await idResponse.json();
 
-                if (traderId === null || traderId === undefined) {
-                    // Silently fail if no trader ID is available yet, will retry
-                    return;
-                }
+                if (traderId === null || traderId === undefined) return;
 
-                // Then fetch portfolio for that trader
                 const portfolioResponse = await fetch(`http://localhost:8000/portfolio/${traderId}`);
-                if (!portfolioResponse.ok) {
-                    throw new Error(`HTTP error! status: ${portfolioResponse.status}`);
-                }
+                if (!portfolioResponse.ok) throw new Error(`HTTP error! status: ${portfolioResponse.status}`);
+                
                 const data: PortfolioData = await portfolioResponse.json();
                 setPortfolio(data);
                 setError(null);
@@ -38,79 +29,72 @@ const Portfolio: React.FC = () => {
             }
         };
 
-        // Fetch immediately and then set an interval
         fetchPortfolio();
-        const interval = setInterval(fetchPortfolio, 2000); // refresh every 2s
-
+        const interval = setInterval(fetchPortfolio, 2000);
         return () => clearInterval(interval);
     }, []);
 
-    const formatCurrency = (value: number) => {
-        return (value / 100).toLocaleString('en-US', {
-            style: 'currency',
-            currency: 'USD',
-        });
+    const formatCurrency = (value: number) => (value / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+
+    const pnlColor = portfolio && portfolio.unrealizedPnl < 0 ? 'text-rose-500' : 'text-emerald-500';
+
+    const renderContent = () => {
+        if (isLoading) return <div className="text-center text-sm text-neutral-500 p-4">Loading portfolio...</div>;
+        if (error) return <div className="text-center text-sm text-rose-500 p-4">{error}</div>;
+        if (!portfolio) return (
+            <div className="text-center text-xs font-mono text-neutral-500 py-4">
+                Portfolio data not available.
+            </div>
+        );
+
+        return (
+            <div className="p-4 flex-1 flex flex-col gap-4">
+                {/* Key metrics */}
+                <div className="grid grid-cols-2 gap-4 text-center">
+                    <div>
+                        <label className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider block mb-1">Total Balance</label>
+                        <span className="text-xl font-mono text-neutral-200">{formatCurrency(portfolio.balance)}</span>
+                    </div>
+                    <div>
+                        <label className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider block mb-1">Unrealized P/L</label>
+                        <span className={`text-xl font-mono ${pnlColor}`}>
+                            {portfolio.unrealizedPnl >= 0 ? '+' : ''}{formatCurrency(portfolio.unrealizedPnl)}
+                        </span>
+                    </div>
+                </div>
+
+                <div className="h-px bg-white/5 w-full"></div>
+
+                {/* Positions */}
+                <div>
+                    <label className="text-xs text-neutral-400 font-medium uppercase tracking-wider block mb-2 px-1">Positions</label>
+                    <div className="space-y-1 max-h-[160px] overflow-y-auto no-scrollbar">
+                        {Object.keys(portfolio.positions).length > 0 ? (
+                            Object.entries(portfolio.positions).map(([symbol, quantity]) => (
+                                <div key={symbol} className="flex justify-between items-center text-sm font-mono p-2 rounded hover:bg-white/5">
+                                    <span className="text-blue-400 font-bold">{symbol}</span>
+                                    <span className={`font-medium ${quantity > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                        {quantity > 0 ? '+' : ''}{quantity.toLocaleString()}
+                                    </span>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="text-center text-xs font-mono text-neutral-500 py-4">
+                                No open positions.
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
     };
 
-    const PnlColor = portfolio && portfolio.unrealizedPnl < 0 ? 'text-rose-500' : 'text-emerald-500';
-
     return (
-        <div className="bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg p-1 h-full flex flex-col">
-            <div className="p-4 border-b border-neutral-200 dark:border-neutral-700 flex justify-center items-center">
-                <h2 className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">My Portfolio</h2>
+        <div className="bg-neutral-950/70 border border-white/5 rounded-lg h-full flex flex-col">
+            <div className="p-3 border-b border-white/5 flex justify-center items-center">
+                <h2 className="text-sm font-semibold text-neutral-300">My Portfolio</h2>
             </div>
-
-            <div className="p-5 flex-1 flex flex-col gap-5">
-                {isLoading && <div className="text-center text-sm text-neutral-500">Loading portfolio...</div>}
-                {error && !isLoading && <div className="text-center text-sm text-rose-500">{error}</div>}
-                
-                {!portfolio && !isLoading && !error && (
-                     <div className="text-center text-xs font-mono text-neutral-500 py-4">
-                        Portfolio data not available.
-                    </div>
-                )}
-
-                {portfolio && (
-                    <>
-                        {/* Key metrics */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="text-center">
-                                <label className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider block mb-1">Total Balance</label>
-                                <span className="text-xl font-mono text-neutral-800 dark:text-neutral-200">{formatCurrency(portfolio.balance)}</span>
-                            </div>
-                            <div className="text-center">
-                                <label className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider block mb-1">Unrealized P/L</label>
-                                <span className={`text-xl font-mono ${PnlColor}`}>
-                                    {portfolio.unrealizedPnl >= 0 ? '+' : ''}{formatCurrency(portfolio.unrealizedPnl)}
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="h-px bg-neutral-200 dark:bg-neutral-700 w-full my-1"></div>
-
-                        {/* Positions */}
-                        <div>
-                            <label className="text-xs text-neutral-500 font-medium uppercase tracking-wider block mb-2">Positions</label>
-                            <div className="space-y-2 max-h-[160px] overflow-y-auto no-scrollbar pr-2">
-                                {Object.keys(portfolio.positions).length > 0 ? (
-                                    Object.entries(portfolio.positions).map(([symbol, quantity]) => (
-                                        <div key={symbol} className="flex justify-between items-center text-sm font-mono p-2 rounded bg-white dark:bg-neutral-950 border border-transparent hover:border-neutral-200 dark:hover:border-neutral-800">
-                                            <span className="text-blue-500 dark:text-blue-400 font-bold">{symbol}</span>
-                                            <span className={`font-medium ${quantity > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                                {quantity.toLocaleString()}
-                                            </span>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <div className="text-center text-xs font-mono text-neutral-500 py-4">
-                                        No open positions.
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </>
-                )}
-            </div>
+            {renderContent()}
         </div>
     );
 };

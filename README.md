@@ -59,12 +59,29 @@ make
 ## Future Work
 
 TODO:
-- Traders need a better system of adding and removing them
-  - Have a map of names, and dedicated function for removing by name
-  - also float this up to the backend and frontend (so user can special them)
-  - also have a way to set each parameter of a trader
-- the tick interval thing on the frontend needs logic in the backend
-- authentification needs to be added
+- Current bug with the live_orders_ map in the tradingSystem.cpp area
+  - only adds orders from manual trading, not automated traders
+  - this messes with the latency calculations and the active order count on the frontend
+
+- PnL calculations on the frontend
+
+- Live Event Log integration and general logging for events
+
+- Websockets for the candlestick data on the manual trading page
+  - make logic for post requests on the orders
+
+- Frontend/backend integration on automated trader page
+  - Need to setup pydantic structs on backend and traderInfo in C++
+  - post field info to backend/call C++ create_..._trader method
+  - get_all_traders endpoint
+  - post running status/add logic in C++ to turn on/off trader
+  - add quantity field to create trader menu
+  - track Trader's balance/pnl/latency/orders per second
+
+- tick interval logic needs to be connected
+  - Possibly switch how the tick interval logic works in the backend
+
+- authentification needs to be added (emails/passwords/sign-in)
 
 - Implement different algorithm traders (random, momentum, etc.)
 - Incorporate more of boost

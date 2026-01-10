@@ -42,6 +42,7 @@ public:
 
   virtual std::map<std::string, double> get_parameters() const = 0;
   virtual void set_parameters(const std::map<std::string, double>& params) = 0;
+  virtual void update_tick_interval(std::chrono::milliseconds new_interval) = 0;
 
 protected:
 
@@ -70,6 +71,7 @@ public:
   void tick() override;
   std::map<std::string, double> get_parameters() const override;
   void set_parameters(const std::map<std::string, double>& params) override;
+  void update_tick_interval(std::chrono::milliseconds new_interval) override;
 
 private:
 
@@ -97,6 +99,7 @@ public:
   void tick() override;
   std::map<std::string, double> get_parameters() const override;
   void set_parameters(const std::map<std::string, double>& params) override;
+  void update_tick_interval(std::chrono::milliseconds new_interval) override;
 
 private:
 
@@ -130,6 +133,7 @@ public:
   void tick() override;
   std::map<std::string, double> get_parameters() const override;
   void set_parameters(const std::map<std::string, double>& params) override;
+  void update_tick_interval(std::chrono::milliseconds new_interval) override;
 
 private:
 

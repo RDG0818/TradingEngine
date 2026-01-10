@@ -56,17 +56,19 @@ public:
   void enable_automated_traders(bool enable);
   bool are_automated_traders_enabled() const;
 
-  void add_random_market_trader(std::string name, float lambda, 
-                             std::chrono::milliseconds tickInterval, 
-                             Quantity quantity); 
+  bool add_random_market_trader(std::string name, float lambda, Quantity quantity); 
 
-  void add_random_limit_trader(std::string name, float lambda, std::chrono::milliseconds tickInterval, 
-                            Quantity quantity, float norm_dist_var);
+  bool add_random_limit_trader(std::string name, float lambda, Quantity quantity, float norm_dist_var);
 
-  void add_market_maker_trader(std::string name, float mu, float sigma, float spread,
-                            std::chrono::milliseconds tickInterval, 
-                            Quantity quantity, 
+  bool add_market_maker_trader(std::string name, float mu, float sigma, float spread, Quantity quantity, 
                             std::unordered_map<std::string, double>& init_price);
+
+  bool remove_trader(const std::string& name);
+  std::optional<std::map<std::string, double>> get_trader_parameters(const std::string& name);
+  bool set_trader_parameters(const std::string& name, const std::map<std::string, double>& params);
+  
+  int get_tick_interval() const;
+  bool set_tick_interval(int tick_length_ms);
 
   SystemMetrics get_system_metrics() const;
   std::optional<MarketSnapshot> get_market_snapshot(const std::string& symbol) const;

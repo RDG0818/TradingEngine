@@ -255,21 +255,39 @@ void TradingSystem::on_order_cancelled(const OrderCancelledEvent& event) {
     }
 }
 
-void TradingSystem::add_random_market_trader(std::string name, float lambda, 
-                                          std::chrono::milliseconds tickInterval, 
+bool TradingSystem::add_random_market_trader(std::string name, float lambda, 
                                           Quantity quantity) {
-      manager_.addRandomMarketTrader(name, lambda, tickInterval, quantity);
+      return manager_.addRandomMarketTrader(name, lambda, quantity);
     }
 
-void TradingSystem::add_random_limit_trader(std::string name, float lambda, 
-                                         std::chrono::milliseconds tickInterval, 
+bool TradingSystem::add_random_limit_trader(std::string name, float lambda, 
                                          Quantity quantity, float norm_dist_var) {
-    manager_.addRandomLimitTrader(name, lambda, tickInterval, quantity, norm_dist_var);
+    return manager_.addRandomLimitTrader(name, lambda, quantity, norm_dist_var);
   }
 
-  void TradingSystem::add_market_maker_trader(std::string name, float mu, float sigma, float spread,
-                            std::chrono::milliseconds tickInterval, 
-                            Quantity quantity, 
-                            std::unordered_map<std::string, double>& init_price) {
-    manager_.addMarketMakerTrader(name, mu, sigma, spread, tickInterval, quantity, init_price);
-  }
+bool TradingSystem::add_market_maker_trader(std::string name, float mu, float sigma, float spread,
+                          Quantity quantity, std::unordered_map<std::string, double>& init_price) {
+  return manager_.addMarketMakerTrader(name, mu, sigma, spread, quantity, init_price);
+}
+
+bool TradingSystem::remove_trader(const std::string& name) {
+  return manager_.remove_trader(name);
+}
+
+std::optional<std::map<std::string, double>> TradingSystem::get_trader_parameters(const std::string& name) {
+  return manager_.get_trader_parameters(name);
+}
+
+bool TradingSystem::set_trader_parameters(const std::string& name, const std::map<std::string, double>& params) {
+  return manager_.set_trader_parameters(name, params);
+}
+
+int TradingSystem::get_tick_interval() const {
+    return manager_.get_tick_interval();
+}
+
+bool TradingSystem::set_tick_interval(int tick_length_ms) {
+    return manager_.set_tick_interval(tick_length_ms);
+}
+
+  
