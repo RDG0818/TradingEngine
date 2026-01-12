@@ -8,7 +8,7 @@
 
 RandomMarketTrader::RandomMarketTrader(std::string name, MatchingEngine& engine, EventDispatcher& dispatcher, TraderID trader_id, 
                                  float lambda, std::chrono::milliseconds time_delta, const std::vector<std::string>& symbols, int max_quantity)
-    : Trader(name, TraderType::LIQUIDITY, engine, dispatcher, trader_id, symbols),
+    : Trader(name, TraderType::RANDOM_MARKET, engine, dispatcher, trader_id, symbols),
       lambda_(lambda),
       gen_(std::random_device{}()),
       exp_dist_{lambda},
@@ -61,7 +61,7 @@ void RandomMarketTrader::set_parameters(const std::map<std::string, double>& par
 
 RandomLimitTrader::RandomLimitTrader(std::string name, MatchingEngine& engine, EventDispatcher& dispatcher, TraderID trader_id, float lambda, 
                            std::chrono::milliseconds time_delta, const std::vector<std::string>& symbols, int max_quantity, float norm_dist_var)
-    : Trader(name, TraderType::RANDOM, engine, dispatcher, trader_id, symbols),
+    : Trader(name, TraderType::RANDOM_LIMIT, engine, dispatcher, trader_id, symbols),
       lambda_(lambda),
       norm_dist_var_(norm_dist_var),
       gen_(std::random_device{}()),

@@ -20,9 +20,9 @@ interface Trader {
 // --- CONSTANTS ---
 const TRADER_TYPES: TraderType[] = ['Market Maker', 'Random Limit', 'Random Market'];
 const DEFAULT_PARAMS: Record<TraderType, Record<string, string>> = {
-    'Market Maker': { mu: '0.0', sigma: '0.1', spread: '0.05' },
-    'Random Limit': { lambda: '5.0', 'normal_distribution_variance': '0.2' },
-    'Random Market': { lambda: '5.0' },
+    'Market Maker': { mu: '0.0', sigma: '0.1', spread: '0.05', max_quantity: '10' },
+    'Random Limit': { lambda: '5.0', 'normal_distribution_variance': '0.2', max_quantity: '10' },
+    'Random Market': { lambda: '5.0', max_quantity: '10' },
 };
 
 // --- REUSABLE & STYLED COMPONENTS ---
@@ -74,8 +74,15 @@ const TraderCard: React.FC<{ trader: Trader; onEdit: (trader: Trader) => void; o
                 </div>
                 <Sparkline data={trader.recentHistory} status={trader.status} />
             </div>
-            <div className="grid grid-cols-3 gap-2 text-center border-t border-b border-white/5 py-3">
-                {['OPS', 'Lat (ms)', 'PnL'].map(label => <div key={label}><div className="text-xs text-neutral-500">{label}</div>{label === 'PnL' ? <Pnl value={trader.pnl} /> : <div className="font-mono text-neutral-200">{label === 'OPS' ? trader.ops.toFixed(1) : trader.latency.toFixed(2)}</div>}</div>)}
+            <div className="grid grid-cols-4 gap-2 text-center border-t border-b border-white/5 py-3">
+                {['OPS', 'Lat (µs)', 'Max Qty', 'PnL'].map(label => <div key={label}><div className="text-xs text-neutral-500">{label}</div>{
+                    label === 'PnL' ? <Pnl value={trader.pnl} /> :
+                    <div className="font-mono text-neutral-200">{
+                        label === 'OPS' ? trader.ops.toFixed(1) :
+                        label === 'Lat (µs)' ? (trader.latency * 1000).toFixed(2) :
+                        trader.parameters.max_quantity ?? '10'
+                    }</div>
+                }</div>)}
             </div>
             <div className="flex justify-end gap-2">
                 <button onClick={() => onToggleStatus(trader.id)} className="p-2 text-neutral-400 rounded-md hover:bg-white/10 hover:text-white transition-colors">{isRunning ? <Pause size={16} /> : <Play size={16} />}</button>
@@ -159,39 +166,88 @@ const AutomatedTraderSettings: React.FC = () => {
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
     const [traderToEdit, setTraderToEdit] = useState<Trader | null>(null);
 
+    const fetchTraders = useCallback(async () => {
+      try {
+        const response = await fetch('http://localhost:8000/traders');
+        if (response.ok) {
+          const data = await response.json();
+          setTraders(data.traders);
+        } else {
+          console.error("Failed to fetch traders:", response.statusText);
+        }
+      } catch (error) { console.error("Failed to fetch traders:", error); }
+    }, []);
+
     useEffect(() => {
-        const fetchTraders = async () => {
-          try {
-            const response = await fetch('http://localhost:8000/traders');
-            if (response.ok) setTraders((await response.json()).traders);
-          } catch (error) { console.error("Failed to fetch traders:", error); }
-        };
         fetchTraders();
         const interval = setInterval(fetchTraders, 5000);
         return () => clearInterval(interval);
-    }, []);
+    }, [fetchTraders]);
 
     const handleDeployClick = () => { setTraderToEdit(null); setIsDrawerOpen(true); };
     const handleEditClick = (trader: Trader) => { setTraderToEdit(trader); setIsDrawerOpen(true); };
     const handleCloseDrawer = () => { setIsDrawerOpen(false); setTraderToEdit(null); };
 
     const handleSaveTrader = useCallback(async (data: Omit<Trader, 'id' | 'recentHistory'> & { id?: string }) => {
-        console.log("Saving trader:", data); // TODO: Replace with actual API call
-        setTraders(prev => data.id ? prev.map(t => t.id === data.id ? { ...t, ...data } : t) : [...prev, { ...data, id: `local-new-${Date.now()}`, recentHistory: [] }]);
-    }, []);
+        const isEditing = !!data.id;
+        const url = isEditing ? `http://localhost:8000/traders/${data.id}` : 'http://localhost:8000/traders';
+        const method = isEditing ? 'PUT' : 'POST';
 
-    const handleToggleStatus = useCallback((id: string) => {
-        // TODO: Replace with actual API call
-        setTraders(prev => prev.map(t => t.id === id ? { ...t, status: t.status === 'running' ? 'idle' : 'running' } : t));
-    }, []);
+        const payload = isEditing 
+            ? { parameters: data.parameters } 
+            : { name: data.name, type: data.type, parameters: data.parameters };
+
+        try {
+            const response = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to save trader');
+            }
+            
+            fetchTraders();
+            handleCloseDrawer();
+        } catch (error) {
+            console.error("Failed to save trader:", error);
+            alert(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
+        }
+    }, [fetchTraders]);
+
+    const handleToggleStatus = useCallback(async (id: string) => {
+        try {
+            const response = await fetch(`http://localhost:8000/traders/${id}/toggle`, { method: 'POST' });
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to toggle trader status');
+            }
+            // Give the backend a moment to process before refetching
+            setTimeout(fetchTraders, 250);
+        } catch (error) {
+            console.error('Failed to toggle trader status:', error);
+            alert(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
+        }
+    }, [fetchTraders]);
     
     const handleDeleteTrader = useCallback(async (id: string) => {
-        if (window.confirm("Are you sure you want to delete this trading agent?")) {
-            console.log("Deleting trader:", id); // TODO: Replace with actual API call
-            setTraders(prev => prev.filter(t => t.id !== id));
-            handleCloseDrawer();
+        if (window.confirm("Are you sure you want to delete this trading agent? This action cannot be undone.")) {
+            try {
+                const response = await fetch(`http://localhost:8000/traders/${id}`, { method: 'DELETE' });
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to delete trader');
+                }
+                fetchTraders();
+                handleCloseDrawer();
+            } catch (error) {
+                console.error("Failed to delete trader:", error);
+                alert(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
+            }
         }
-    }, []);
+    }, [fetchTraders]);
 
     return (
         <div className="p-4 lg:p-8 flex flex-col h-full bg-neutral-950 text-neutral-200">

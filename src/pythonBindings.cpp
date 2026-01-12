@@ -32,6 +32,14 @@ PYBIND11_MODULE(trading_engine_py, m) {
     .value("FOK", TimeInForce::FOK)
     .export_values();
 
+  py::enum_<TraderType>(m, "TraderType")
+    .value("RANDOM_MARKET", TraderType::RANDOM_MARKET)
+    .value("RANDOM_LIMIT", TraderType::RANDOM_LIMIT)
+    .value("MARKET_MAKER", TraderType::MARKET_MAKER)
+    .value("MOMENTUM", TraderType::MOMENTUM)
+    .value("MEAN_REVERSION", TraderType::MEAN_REVERSION)
+    .export_values();
+
   py::class_<RawOrderParams>(m, "RawOrderParams")
     .def(py::init<>())
     .def_readwrite("symbol", &RawOrderParams::symbol)
@@ -51,6 +59,18 @@ PYBIND11_MODULE(trading_engine_py, m) {
     .def_readonly("active_orders", &SystemMetrics::active_orders)
     .def_readonly("event_queue_depth", &SystemMetrics::event_queue_depth)
     .def_readonly("throughput", &SystemMetrics::throughput);
+
+  py::class_<TraderMetrics>(m, "TraderMetrics")
+    .def(py::init<>())
+    .def_readonly("orders_submitted", &TraderMetrics::orders_submitted)
+    .def_readonly("orders_per_second", &TraderMetrics::orders_per_second)
+    .def_readonly("avg_latency_ms", &TraderMetrics::avg_latency_ms);
+
+  py::class_<TraderInfo>(m, "TraderInfo")
+  .def(py::init<>())
+  .def_readonly("id", &TraderInfo::id)
+  .def_readonly("name", &TraderInfo::name)
+  .def_readonly("type", &TraderInfo::type);
 
   py::class_<MarketSnapshot>(m, "MarketSnapshot")
     .def(py::init<>())
@@ -91,17 +111,23 @@ PYBIND11_MODULE(trading_engine_py, m) {
     .def("add_random_limit_trader", &TradingSystem::add_random_limit_trader)
     .def("add_market_maker_trader", &TradingSystem::add_market_maker_trader)
     .def("remove_trader", &TradingSystem::remove_trader)
+    .def("start_trader", &TradingSystem::start_trader)
+    .def("stop_trader", &TradingSystem::stop_trader)
+    .def("is_trader_active", &TradingSystem::is_trader_active)
     .def("get_trader_parameters", &TradingSystem::get_trader_parameters)
     .def("set_trader_parameters", &TradingSystem::set_trader_parameters)
     .def("enable_automated_traders", &TradingSystem::enable_automated_traders)
     .def("are_automated_traders_enabled", &TradingSystem::are_automated_traders_enabled)
     .def("get_system_metrics", &TradingSystem::get_system_metrics)
+    .def("get_trader_metrics", &TradingSystem::get_trader_metrics, py::arg("trader_id"))
     .def("get_market_snapshot", &TradingSystem::get_market_snapshot, py::arg("symbol"))
     .def("get_portfolio_snapshot", &TradingSystem::get_portfolio_snapshot, py::arg("trader_id"))
+    .def("get_all_traders", &TradingSystem::get_all_traders)
     .def("get_tick_interval", &TradingSystem::get_tick_interval)
     .def("set_tick_interval", &TradingSystem::set_tick_interval, py::arg("tick_length_ms"))
     .def("get_all_symbols", &TradingSystem::get_all_symbols)
     .def("create_portfolio", &TradingSystem::create_portfolio, py::arg("starting_balance"))
+    .def("reset_balance", &TradingSystem::reset_balance, py::arg("trader_id"))
     .def("submit_order", &TradingSystem::submit_order, py::arg("trader_id"), py::arg("params"))
     .def("cancel_order", &TradingSystem::cancel_order, py::arg("order_id"));
 }

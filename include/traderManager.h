@@ -1,11 +1,31 @@
 // include/traderManager.h
 
+#ifndef TRADINGENGINE_INCLUDE_TRADERMANAGER_H_
+#define TRADINGENGINE_INCLUDE_TRADERMANAGER_H_
+
 #include <algorithm>
 #include <mutex>
 #include <optional>
+#include <chrono>
 #include "trader.h"
 
 // class to run all Traders tick function on a single thread
+
+struct TraderInfo {
+  TraderID id;
+  std::string name;
+  TraderType type;
+};
+
+struct TraderMetrics {
+  int64_t orders_submitted = 0;
+  double orders_per_second = 0.0;
+  double avg_latency_ms = 0.0;
+
+  double avg_latency_ns_ = 0.0;
+  int64_t last_orders_submitted_ = 0;
+  Timestamp last_metrics_query_time_{std::chrono::system_clock::now()};
+};
 
 class TraderManager {
 
@@ -75,11 +95,15 @@ public:
 
   bool remove_trader(const std::string& name) {
     std::lock_guard<std::mutex> lock(traders_mutex_);
-    auto it = std::remove_if(traders_.begin(), traders_.end(), 
+    auto it = std::find_if(traders_.begin(), traders_.end(), 
       [&](const auto& trader) { return trader->get_name() == name; });
 
     if (it != traders_.end()) {
-      traders_.erase(it, traders_.end());
+      TraderID id_to_remove = (*it)->get_id();
+      traders_.erase(it);
+
+      std::lock_guard<std::mutex> metrics_lock(metrics_mutex_);
+      trader_metrics_.erase(id_to_remove);
       return true;
     }
     return false;
@@ -105,9 +129,48 @@ public:
         return false;
   }
 
+  bool start_trader(const std::string& name) {
+    std::lock_guard<std::mutex> lock(traders_mutex_);
+    Trader* trader = get_trader(name);
+    if (trader) {
+      trader->start();
+      return true;
+    }
+    return false;
+  }
+
+  bool stop_trader(const std::string& name) {
+    std::lock_guard<std::mutex> lock(traders_mutex_);
+    Trader* trader = get_trader(name);
+    if (trader) {
+      trader->stop();
+      return true;
+    }
+    return false;
+  }
+
+  std::optional<bool> is_trader_active(const std::string& name) {
+    std::lock_guard<std::mutex> lock(traders_mutex_);
+    Trader* trader = get_trader(name);
+    if (trader) {
+      return trader->is_active();
+    }
+    return std::nullopt;
+  }
+
   int get_tick_interval() const {
     std::lock_guard<std::mutex> lock(traders_mutex_);
     return tick_interval_.count();
+  }
+
+  std::vector<TraderInfo> get_all_traders() const {
+    std::lock_guard<std::mutex> lock(traders_mutex_);
+    std::vector<TraderInfo> trader_infos;
+    trader_infos.reserve(traders_.size());
+    for (const auto& trader : traders_) {
+      trader_infos.push_back({trader->get_id(), trader->get_name(), trader->get_type()});
+    }
+    return trader_infos;
   }
 
   bool set_tick_interval(int tick_length_ms) {
@@ -145,6 +208,46 @@ public:
   bool is_running() const {
     return running_;
   }
+
+  void increment_order_count(TraderID trader_id) {
+    std::lock_guard<std::mutex> lock(metrics_mutex_);
+    if (trader_metrics_.count(trader_id)) {
+      trader_metrics_.at(trader_id).orders_submitted++;
+    }
+  }
+
+  void update_latency(TraderID trader_id, int64_t latency_ns) {
+    std::lock_guard<std::mutex> lock(metrics_mutex_);
+    if (trader_metrics_.count(trader_id)) {
+      auto& metrics = trader_metrics_.at(trader_id);
+      if (metrics.avg_latency_ns_ == 0.0) {
+        metrics.avg_latency_ns_ = static_cast<double>(latency_ns);
+      } else {
+        metrics.avg_latency_ns_ = (static_cast<double>(latency_ns) * 0.05) + (metrics.avg_latency_ns_ * (1.0 - 0.05));
+      }
+    }
+  }
+
+  std::optional<TraderMetrics> get_metrics(TraderID trader_id) const {
+    std::lock_guard<std::mutex> lock(metrics_mutex_);
+    if (!trader_metrics_.count(trader_id)) {
+      return std::nullopt;
+    }
+
+    auto& metrics = trader_metrics_.at(trader_id);
+    auto now = std::chrono::system_clock::now();
+    double time_delta_s = std::chrono::duration<double>(now - metrics.last_metrics_query_time_).count();
+
+    if (time_delta_s > 0.9) {
+      int64_t orders_delta = metrics.orders_submitted - metrics.last_orders_submitted_;
+      metrics.orders_per_second = static_cast<double>(orders_delta) / time_delta_s;
+      metrics.last_orders_submitted_ = metrics.orders_submitted;
+      metrics.last_metrics_query_time_ = now;
+    }
+
+    metrics.avg_latency_ms = metrics.avg_latency_ns_ / 1e6;
+    return metrics;
+  }
   
 private:
 
@@ -158,8 +261,8 @@ private:
   std::thread thread_;
   mutable std::mutex traders_mutex_;
 
-  std::random_device rd;
-  std::mt19937 gen;
+  mutable std::map<TraderID, TraderMetrics> trader_metrics_;
+  mutable std::mutex metrics_mutex_;
 
   void run() {
     while (running_) {
@@ -172,7 +275,9 @@ private:
       }
 
       for (auto& trader : traders_copy) {
-        trader->tick();
+        if (trader->is_active()) {
+          trader->tick();
+        }
       }
       std::this_thread::sleep_for(current_tick_interval); // Use the local copy
     }
@@ -187,7 +292,13 @@ private:
       return false; // Name already exists
     }
 
+    TraderID new_id = trader->get_id();
+
     traders_.push_back(std::move(trader));
+
+    std::lock_guard<std::mutex> metrics_lock(metrics_mutex_);
+    trader_metrics_[new_id] = TraderMetrics{};
+
     return true;
   };
 
@@ -203,3 +314,5 @@ private:
 
 
 };
+
+#endif // TRADINGENGINE_INCLUDE_TRADERMANAGER_H_

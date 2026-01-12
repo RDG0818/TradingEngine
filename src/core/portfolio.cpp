@@ -106,3 +106,22 @@ void Portfolio::on_trade_executed(const TradeExecutedEvent& trade, const std::sh
   }
 }
 
+void Portfolio::reset_balance() {
+  balance_ = starting_balance_;
+  for (auto order : order_history_) {
+    if (order->get_order_status() != OrderStatus::FILLED && 
+      order->get_order_status() != OrderStatus::CANCELLED &&
+      order->get_order_status() != OrderStatus::REJECTED) {
+      engine_.cancel_order(order->get_order_id());
+    }
+  }
+  assets_.clear();
+  // TODO: Add PnL reset here
+}
+
+TraderID Portfolio::get_trader_id() const {
+  return trader_id_;
+}
+
+
+

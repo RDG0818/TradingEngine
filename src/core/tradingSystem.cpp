@@ -24,6 +24,9 @@ TradingSystem::TradingSystem(int tick_interval_ms, const std::vector<std::string
     dispatcher_.subscribe<BookUpdateEvent>([this](const BookUpdateEvent& event) {
         this->on_book_update(event);
     });
+    dispatcher_.subscribe<OrderSubmittedEvent>([this](const OrderSubmittedEvent& event) {
+        this->on_order_submitted(event);
+    });
     dispatcher_.subscribe<OrderAcceptedEvent>([this](const OrderAcceptedEvent& event) {
         this->on_order_accepted(event);
     });
@@ -93,6 +96,10 @@ SystemMetrics TradingSystem::get_system_metrics() const {
     return current_metrics;
 }
 
+std::optional<TraderMetrics> TradingSystem::get_trader_metrics(TraderID trader_id) const {
+    return manager_.get_metrics(trader_id);
+}
+
 std::optional<MarketSnapshot> TradingSystem::get_market_snapshot(const std::string& symbol) const {
     SymbolID symbol_id = SymbolRegistry::get_instance().get_id(symbol);
     std::lock_guard<std::mutex> lock(system_mutex_);
@@ -124,12 +131,23 @@ const std::vector<std::string>& TradingSystem::get_all_symbols() const {
     return symbols_;
 }
 
+std::vector<TraderInfo> TradingSystem::get_all_traders() const {
+    return manager_.get_all_traders();
+}
+
 TraderID TradingSystem::create_portfolio(Price starting_balance) {
     TraderID new_id = next_trader_id_++;
-    portfolios_.emplace(std::piecewise_construct,
-                        std::forward_as_tuple(new_id),
-                        std::forward_as_tuple(engine_, starting_balance, new_id));
+    portfolios_.insert({new_id, Portfolio(engine_, starting_balance, new_id)});
     return new_id;
+}
+
+bool TradingSystem::reset_balance(TraderID trader_id) {
+    auto it = portfolios_.find(trader_id);
+    if (it != portfolios_.end()) {
+        it->second.reset_balance();
+        return true;
+    }
+    return false;
 }
 
 OrderID TradingSystem::submit_order(TraderID trader_id, const RawOrderParams& params) {
@@ -188,8 +206,6 @@ void TradingSystem::cancel_order(OrderID order_id) {
 void TradingSystem::on_trade_executed(const TradeExecutedEvent& event) {
     std::lock_guard<std::mutex> lock(system_mutex_);
 
-    metrics_.orders_processed++; // A trade implies at least one order was processed
-
     auto& snapshot = market_snapshots_[event.symbol_id];
     snapshot.last_trade_price = event.price;
     snapshot.last_trade_quantity = event.quantity;
@@ -206,11 +222,28 @@ void TradingSystem::on_trade_executed(const TradeExecutedEvent& event) {
         aggressor_it->second.on_trade_executed(event, live_orders_[event.aggressing_order_id]);
     }
 
+    // Latency for aggressive order
+    if (latency_recorded_orders_.find(event.aggressing_order_id) == latency_recorded_orders_.end()) {
+        auto it = live_orders_.find(event.aggressing_order_id);
+        if (it != live_orders_.end()) {
+            auto order_creation_time = it->second->get_timestamp();
+            auto event_time = event.get_timestamp();
+            auto latency = std::chrono::duration_cast<std::chrono::nanoseconds>(event_time - order_creation_time).count();
+            
+            manager_.update_latency(event.aggressing_trader_id, latency);
+            latency_recorded_orders_.insert(event.aggressing_order_id);
+        }
+    }
+
     // Find and update resting party's portfolio
     auto resting_it = portfolios_.find(event.resting_trader_id);
     if (resting_it != portfolios_.end()) {
         resting_it->second.on_trade_executed(event, live_orders_[event.resting_order_id]);
     }
+}
+
+void TradingSystem::on_order_submitted(const OrderSubmittedEvent& event) {
+    manager_.increment_order_count(event.trader_id);
 }
 
 void TradingSystem::on_book_update(const BookUpdateEvent& event) {
@@ -226,6 +259,10 @@ void TradingSystem::on_order_accepted(const OrderAcceptedEvent& event) {
     std::lock_guard<std::mutex> lock(system_mutex_);
     metrics_.active_orders++;
 
+    if (latency_recorded_orders_.count(event.order_id)) {
+        return; // Latency already recorded for this order
+    }
+
     // Latency calculation
     auto it = live_orders_.find(event.order_id);
     if (it != live_orders_.end()) {
@@ -233,6 +270,9 @@ void TradingSystem::on_order_accepted(const OrderAcceptedEvent& event) {
         auto event_time = event.get_timestamp();
         auto latency = std::chrono::duration_cast<std::chrono::nanoseconds>(event_time - order_creation_time).count();
         
+        manager_.update_latency(event.trader_id, latency);
+        latency_recorded_orders_.insert(event.order_id);
+
         if (avg_latency_ns_ == 0.0) {
             avg_latency_ns_ = static_cast<double>(latency);
         } else {
@@ -272,6 +312,18 @@ bool TradingSystem::add_market_maker_trader(std::string name, float mu, float si
 
 bool TradingSystem::remove_trader(const std::string& name) {
   return manager_.remove_trader(name);
+}
+
+bool TradingSystem::start_trader(const std::string& name) {
+    return manager_.start_trader(name);
+}
+
+bool TradingSystem::stop_trader(const std::string& name) {
+    return manager_.stop_trader(name);
+}
+
+std::optional<bool> TradingSystem::is_trader_active(const std::string& name) {
+    return manager_.is_trader_active(name);
 }
 
 std::optional<std::map<std::string, double>> TradingSystem::get_trader_parameters(const std::string& name) {

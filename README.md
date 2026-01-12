@@ -73,12 +73,7 @@ TODO:
   - make logic for post requests on the orders
 
 - Frontend/backend integration on automated trader page
-  - Need to setup pydantic structs on backend and traderInfo in C++
-  - post field info to backend/call C++ create_..._trader method
-  - get_all_traders endpoint
-  - post running status/add logic in C++ to turn on/off trader
-  - add quantity field to create trader menu
-  - track Trader's balance/pnl/latency/orders per second
+  - track Trader's pnl/recent activity 
 
 - tick interval logic needs to be connected
   - Possibly switch how the tick interval logic works in the backend

@@ -1,10 +1,35 @@
 import React from 'react';
 
 const Settings: React.FC = () => {
-  const handleResetBalance = () => {
-    // TODO: Implement API call to reset balance
+  const handleResetBalance = async () => {
     console.log("Resetting balance...");
-    alert("Trader balance has been reset.");
+    try {
+        const idResponse = await fetch('http://localhost:8000/trader/default_id');
+        if (!idResponse.ok) throw new Error('Failed to fetch default trader ID');
+        const { traderId } = await idResponse.json();
+
+        if (traderId === null || traderId === undefined) {
+            throw new Error("Default trader ID not available.");
+        }
+
+        const response = await fetch('http://localhost:8000/portfolio/reset', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ trader_id: traderId }),
+        });
+
+        if (response.ok) {
+            alert("Trader balance has been reset.");
+        } else {
+            const errorData = await response.json();
+            alert(`Failed to reset balance: ${errorData.detail || 'Unknown error'}`);
+        }
+    } catch (error: any) {
+        console.error("Error resetting balance:", error);
+        alert(`An error occurred: ${error.message}`);
+    }
   }
 
   const handleResetSystem = () => {

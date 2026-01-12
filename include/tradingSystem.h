@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <set>
 
 #include "matchingEngine.h"
 #include "portfolio.h"
@@ -64,6 +65,9 @@ public:
                             std::unordered_map<std::string, double>& init_price);
 
   bool remove_trader(const std::string& name);
+  bool start_trader(const std::string& name);
+  bool stop_trader(const std::string& name);
+  std::optional<bool> is_trader_active(const std::string& name);
   std::optional<std::map<std::string, double>> get_trader_parameters(const std::string& name);
   bool set_trader_parameters(const std::string& name, const std::map<std::string, double>& params);
   
@@ -71,17 +75,21 @@ public:
   bool set_tick_interval(int tick_length_ms);
 
   SystemMetrics get_system_metrics() const;
+  std::optional<TraderMetrics> get_trader_metrics(TraderID trader_id) const;
   std::optional<MarketSnapshot> get_market_snapshot(const std::string& symbol) const;
   std::optional<PortfolioSnapshot> get_portfolio_snapshot(TraderID trader_id) const;
   const std::vector<std::string>& get_all_symbols() const;
+  std::vector<TraderInfo> get_all_traders() const;
 
   TraderID create_portfolio(Price starting_balance);
+  bool reset_balance(TraderID trader_id);
   OrderID submit_order(TraderID trader_id, const RawOrderParams& params);
   void cancel_order(OrderID order_id);
 
 private:
   void on_trade_executed(const TradeExecutedEvent& event);
   void on_book_update(const BookUpdateEvent& event);
+  void on_order_submitted(const OrderSubmittedEvent& event);
   void on_order_accepted(const OrderAcceptedEvent& event);
   void on_order_filled(const OrderFilledEvent& event);
   void on_order_cancelled(const OrderCancelledEvent& event);
@@ -95,6 +103,7 @@ private:
   TraderID next_trader_id_ = 1;
   std::map<TraderID, Portfolio> portfolios_;
   std::map<OrderID, std::shared_ptr<Order>> live_orders_;
+  std::set<OrderID> latency_recorded_orders_;
 
   mutable std::mutex system_mutex_; // A single mutex for all system state for simplicity
   SystemMetrics metrics_;

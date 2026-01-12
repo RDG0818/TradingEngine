@@ -36,6 +36,7 @@ void MatchingEngine::stop() {
 }
 
 OrderID MatchingEngine::submit_order(const RawOrderParams& params) {
+  event_dispatcher_.publish(OrderSubmittedEvent(params.trader_id));
   OrderID id = id_generator_.new_id();
   LOG_DEBUG("submit_order: New order ID " + std::to_string(id) + " for symbol " + params.symbol);
 

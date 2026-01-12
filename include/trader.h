@@ -3,6 +3,7 @@
 #ifndef TRADINGENGINE_INCLUDE_TRADER_H_
 #define TRADINGENGINE_INCLUDE_TRADER_H_
 
+#include <atomic>
 #include <cmath>
 #include <iostream>
 #include <random>
@@ -18,11 +19,11 @@
 // TODO: subcribe each trader to events for submission verification
 
 enum class TraderType : std::uint8_t {
-    RANDOM,
+    RANDOM_MARKET,
+    RANDOM_LIMIT,
     MARKET_MAKER,
     MOMENTUM,
     MEAN_REVERSION,
-    LIQUIDITY
 };
 
 class Trader {
@@ -40,6 +41,10 @@ public:
   std::string get_name() const { return name_; }
   void set_name(std::string name) { name_ = name; }
 
+  void start() { active_ = true; }
+  void stop() { active_ = false; }
+  bool is_active() const { return active_; }
+
   virtual std::map<std::string, double> get_parameters() const = 0;
   virtual void set_parameters(const std::map<std::string, double>& params) = 0;
   virtual void update_tick_interval(std::chrono::milliseconds new_interval) = 0;
@@ -49,6 +54,7 @@ protected:
   MatchingEngine& engine_;
   EventDispatcher& dispatcher_;
   std::vector<std::string> symbols_;
+  std::atomic<bool> active_{true};
 
 private:
 

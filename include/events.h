@@ -133,4 +133,9 @@ struct OrderFilledEvent : public BaseEvent {
         : order_id(order_id), trader_id(trader_id), last_fill_price(last_fill_price) {}
 };
 
+struct OrderSubmittedEvent : public BaseEvent {
+    TraderID trader_id;
+    OrderSubmittedEvent(TraderID trader_id) : trader_id(trader_id) {}
+};
+
 #endif  // TRADINGENGINE_INCLUDE_EVENTS_H_
