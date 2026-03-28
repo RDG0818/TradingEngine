@@ -2,3 +2,5 @@ build
 .vscode
 data.csv
 .cache/
+.worktrees/
+.superpowers/
