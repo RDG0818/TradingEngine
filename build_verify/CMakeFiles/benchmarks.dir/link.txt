@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/benchmarks.dir/link.d CMakeFiles/benchmarks.dir/tests/cpp/performanceTest.cpp.o -o benchmarks  benchmark/src/libbenchmark.a libcore_lib.a -lrt
