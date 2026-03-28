@@ -1,0 +1,24 @@
+
+# Consider dependencies only in project.
+set(CMAKE_DEPENDS_IN_PROJECT_ONLY OFF)
+
+# The set of languages for which implicit dependencies are needed:
+set(CMAKE_DEPENDS_LANGUAGES
+  )
+
+# The set of dependency files which are needed:
+set(CMAKE_DEPENDS_DEPENDENCY_FILES
+  "/home/ryan/Repos/TradingEngine/.worktrees/cpp-core/benchmark/test/min_time_parse_gtest.cc" "benchmark/test/CMakeFiles/min_time_parse_gtest.dir/min_time_parse_gtest.cc.o" "gcc" "benchmark/test/CMakeFiles/min_time_parse_gtest.dir/min_time_parse_gtest.cc.o.d"
+  "" "benchmark/test/min_time_parse_gtest" "gcc" "benchmark/test/CMakeFiles/min_time_parse_gtest.dir/link.d"
+  )
+
+# Targets to which this target links which contain Fortran sources.
+set(CMAKE_Fortran_TARGET_LINKED_INFO_FILES
+  )
+
+# Targets to which this target links which contain Fortran sources.
+set(CMAKE_Fortran_TARGET_FORWARD_LINKED_INFO_FILES
+  )
+
+# Fortran module output directory.
+set(CMAKE_Fortran_TARGET_MODULE_DIR "")

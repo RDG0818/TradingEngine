@@ -1,0 +1,41 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/core_lib.dir/src/event_bus.cpp.o"
+  "CMakeFiles/core_lib.dir/src/event_bus.cpp.o.d"
+  "CMakeFiles/core_lib.dir/src/exchange.cpp.o"
+  "CMakeFiles/core_lib.dir/src/exchange.cpp.o.d"
+  "CMakeFiles/core_lib.dir/src/market_events.cpp.o"
+  "CMakeFiles/core_lib.dir/src/market_events.cpp.o.d"
+  "CMakeFiles/core_lib.dir/src/order_book.cpp.o"
+  "CMakeFiles/core_lib.dir/src/order_book.cpp.o.d"
+  "CMakeFiles/core_lib.dir/src/order_matcher.cpp.o"
+  "CMakeFiles/core_lib.dir/src/order_matcher.cpp.o.d"
+  "CMakeFiles/core_lib.dir/src/portfolio.cpp.o"
+  "CMakeFiles/core_lib.dir/src/portfolio.cpp.o.d"
+  "CMakeFiles/core_lib.dir/src/trader.cpp.o"
+  "CMakeFiles/core_lib.dir/src/trader.cpp.o.d"
+  "CMakeFiles/core_lib.dir/src/trader_registry.cpp.o"
+  "CMakeFiles/core_lib.dir/src/trader_registry.cpp.o.d"
+  "CMakeFiles/core_lib.dir/src/traders/market_maker.cpp.o"
+  "CMakeFiles/core_lib.dir/src/traders/market_maker.cpp.o.d"
+  "CMakeFiles/core_lib.dir/src/traders/mean_reversion.cpp.o"
+  "CMakeFiles/core_lib.dir/src/traders/mean_reversion.cpp.o.d"
+  "CMakeFiles/core_lib.dir/src/traders/momentum.cpp.o"
+  "CMakeFiles/core_lib.dir/src/traders/momentum.cpp.o.d"
+  "CMakeFiles/core_lib.dir/src/traders/panic.cpp.o"
+  "CMakeFiles/core_lib.dir/src/traders/panic.cpp.o.d"
+  "CMakeFiles/core_lib.dir/src/traders/random_limit.cpp.o"
+  "CMakeFiles/core_lib.dir/src/traders/random_limit.cpp.o.d"
+  "CMakeFiles/core_lib.dir/src/traders/random_market.cpp.o"
+  "CMakeFiles/core_lib.dir/src/traders/random_market.cpp.o.d"
+  "CMakeFiles/core_lib.dir/src/traders/trend_follower.cpp.o"
+  "CMakeFiles/core_lib.dir/src/traders/trend_follower.cpp.o.d"
+  "CMakeFiles/core_lib.dir/src/traders/twap.cpp.o"
+  "CMakeFiles/core_lib.dir/src/traders/twap.cpp.o.d"
+  "libcore_lib.a"
+  "libcore_lib.pdb"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang CXX)
+  include(CMakeFiles/core_lib.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()
