@@ -1,3 +1,4 @@
+// TODO: rewrite for new API (Exchange, OrderMatcher, OrderBook) — excluded from default build via EXCLUDE_FROM_ALL
 #include "benchmark/benchmark.h"
 #include "matchingEngine.h"
 #include "orderBook.h"

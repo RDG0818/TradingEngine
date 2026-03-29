@@ -1,43 +1,24 @@
 // include/portfolio.h
-
-#include <deque>
-#include <memory>
-#include <map>
-
-#include "events.h"
+#pragma once
 #include "order.h"
-#include "matchingEngine.h"
-#include "utils.h"
+#include <mutex>
 
 class Portfolio {
-
 public:
+    explicit Portfolio(uint64_t starting_balance);
 
-  Portfolio(MatchingEngine& engine, Price balance, TraderID trader_id) 
-          : engine_(engine), 
-            balance_(balance), 
-            trader_id_(trader_id) {starting_balance_ = balance_; };
-  Price get_balance() const;
-  TraderID get_trader_id() const;
-  Quantity get_position(SymbolID symbol_id) const;
-  const std::deque<std::shared_ptr<Order>>& get_order_history() const;
-  const std::deque<TradeExecutedEvent>& get_trade_history() const;
-  bool can_submit_order(const std::shared_ptr<Order>& order) const;
-  void on_trade_executed(const TradeExecutedEvent& trade, const std::shared_ptr<Order>& order);
-  const std::map<SymbolID, Quantity>& get_all_positions() const;
-  void reset_balance();
+    void apply_fill(Side side, Price fill_price, Quantity fill_qty);
+    void reset(uint64_t balance);
+
+    uint64_t balance()   const;
+    int64_t  position()  const;  // positive = long, negative = short
+    int64_t  unrealized_pnl(Price current_price) const;
+    Price    avg_cost()  const;
 
 private:
-
-  MatchingEngine& engine_;
-  Price balance_;
-  TraderID trader_id_;
-  std::map<SymbolID, Quantity> assets_;
-  Price starting_balance_;
-
-  std::deque<std::shared_ptr<Order>> order_history_;
-  static constexpr size_t MAX_ORDER_HISTORY_SIZE = 1000;
-
-  std::deque<TradeExecutedEvent> trade_history_;
-  static constexpr size_t MAX_TRADE_HISTORY_SIZE = 1000;
+    mutable std::mutex mutex_;
+    uint64_t balance_;
+    int64_t  position_{0};
+    uint64_t total_cost_{0};    // sum of (price * qty) for buys
+    uint64_t total_bought_{0};  // total qty bought (for avg cost)
 };

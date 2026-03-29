@@ -1,189 +1,71 @@
-// include/order.h
-
-#ifndef TRADINGENGINE_INCLUDE_ORDER_H_
-#define TRADINGENGINE_INCLUDE_ORDER_H_
-
+#pragma once
+#include <cstdint>
 #include <chrono>
-#include <string>
-#include <utility>
+#include <variant>
 
-#include "utils.h"
+// Prices: fixed-point, 10000 units = $1.00  (e.g. $64,200 = 642,000,000)
+// Quantities: integer units (e.g. 100 = 1.00 BTC at 2 decimal places)
+using OrderId   = uint64_t;
+using TraderId  = uint64_t;
+using Price     = uint64_t;
+using Quantity  = uint64_t;
+using Timestamp = std::chrono::nanoseconds;
 
-// Abstract class for other Order types
+enum class Side         : uint8_t { Buy, Sell };
+enum class TimeInForce  : uint8_t { GTC, IOC, FOK };
 
-// TODO: Consider using std::variant for order types instead of polymorphism
-//                    for potential performance gains in high-frequency scenarios.
-class Order {
-
-public:
-
-  Order(SymbolID symbol_id,
-      OrderID order_id,
-      OrderType order_type,
-      Side side,
-      Quantity quantity,
-      TraderID trader_id,
-      TimeInForce tif = TimeInForce::GTC)
-    : timestamp_(std::chrono::time_point_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now())),
-      order_id_(order_id),
-      symbol_id_(symbol_id),
-      quantity_(quantity),
-      trader_id_(trader_id),
-      order_type_(order_type),
-      side_(side),
-      tif_(tif) {
-        LOG_DEBUG("Order created: id=" << order_id_ << ", type=" << ToString(order_type_)
-                  << ", side=" << ToString(side_) << ", qty=" << quantity_);
-      }
-
-  virtual ~Order() = default;
-
-  // Accessors
-  SymbolID get_symbol_id() const {return symbol_id_;}
-  OrderID get_order_id() const {return order_id_;}
-  OrderType get_order_type() const {return order_type_;}
-  OrderStatus get_order_status() const {return order_status_;}
-  Side get_side() const {return side_;}
-  Quantity get_quantity() const {return quantity_;}
-  TraderID get_trader_id() const {return trader_id_;}
-  Timestamp get_timestamp() const {return timestamp_;}
-  TimeInForce get_time_in_force() const {return tif_;}
-  virtual Price get_price() const = 0;
-  virtual Price get_stop_price() const = 0;
-
-  // Mutators
-  void set_order_status(OrderStatus status) {
-    LOG_DEBUG("Order status change: id=" << order_id_ << ", from=" << ToString(order_status_)
-              << ", to=" << ToString(status));
-    order_status_ = status;
-  }
-  // TODO: Revisit immutability of Order. Consider removing set_quantity
-  //               and managing open quantity exclusively within the OrderBook
-  //               via a LiveOrder wrapper, treating the Order object as immutable
-  //               original intent.
-  void set_quantity(Quantity q) {quantity_ = q;}
-
-private:
-
-  Timestamp timestamp_;
-  OrderID order_id_;
-  SymbolID symbol_id_;
-  Quantity quantity_;
-  TraderID trader_id_;
-  OrderType order_type_;
-  OrderStatus order_status_ = OrderStatus::NEW;
-  Side side_;
-  TimeInForce tif_;
-
+struct LimitOrder {
+    OrderId    id;
+    TraderId   trader_id;
+    Side       side;
+    Price      price;
+    Quantity   qty;
+    TimeInForce tif;
+    Timestamp  ts;
 };
 
-class LimitOrder : public Order {
-
-public:
-
-  LimitOrder(SymbolID symbol_id,
-      OrderID order_id,
-      Side side,
-      Price price,
-      Quantity quantity,
-      TraderID trader_id,
-      TimeInForce tif = TimeInForce::GTC)
-    : Order(symbol_id,
-            order_id,
-            OrderType::LIMIT,
-            side,
-            quantity,
-            trader_id,
-            tif),
-      price_(price) {}
-
-  Price get_price() const override {return price_;}
-  Price get_stop_price() const override { return 0; }
-
-private:
-
-  Price price_;
-
+struct MarketOrder {
+    OrderId    id;
+    TraderId   trader_id;
+    Side       side;
+    Quantity   qty;
+    TimeInForce tif;
+    Timestamp  ts;
 };
 
-class StopLimitOrder : public Order {
-
-public:
-
-  StopLimitOrder(SymbolID symbol_id,
-      OrderID order_id,
-      Side side,
-      Quantity quantity,
-      TraderID trader_id,
-      Price stop_price,
-      Price limit_price,
-      TimeInForce tif = TimeInForce::GTC)
-    : Order(symbol_id,
-            order_id,
-            OrderType::STOP_LIMIT,
-            side,
-            quantity,
-            trader_id,
-            tif),
-      stop_price_(stop_price), limit_price_(limit_price) {}
-
-  Price get_stop_price() const override {return stop_price_;}
-  Price get_price() const override {return limit_price_;}
-
-private:
-
-  Price stop_price_;
-  Price limit_price_;
-
+struct StopLimitOrder {
+    OrderId    id;
+    TraderId   trader_id;
+    Side       side;
+    Price      stop_price;
+    Price      limit_price;
+    Quantity   qty;
+    Timestamp  ts;
 };
 
-class MarketOrder : public Order {
-
-public:
-
-  MarketOrder(
-      SymbolID symbol_id,
-      OrderID order_id,
-      Side side,
-      Quantity quantity,
-      TraderID trader_id)
-    : Order(symbol_id,
-            order_id,
-            OrderType::MARKET,
-            side,
-            quantity,
-            trader_id) {}
-
-  Price get_price() const override { return 0; }
-  Price get_stop_price() const override { return 0; }
-
+struct StopMarketOrder {
+    OrderId    id;
+    TraderId   trader_id;
+    Side       side;
+    Price      stop_price;
+    Quantity   qty;
+    Timestamp  ts;
 };
 
-class StopMarketOrder : public Order {
+using Order = std::variant<LimitOrder, MarketOrder, StopLimitOrder, StopMarketOrder>;
 
-public:
-
-  StopMarketOrder(SymbolID symbol_id,
-      OrderID order_id,
-      Side side,
-      Quantity quantity,
-      TraderID trader_id,
-      Price stop_price)
-    : Order(symbol_id,
-            order_id,
-            OrderType::STOP_MARKET,
-            side,
-            quantity,
-            trader_id),
-      stop_price_(stop_price) {}
-
-  Price get_price() const override { return 0; }
-  Price get_stop_price() const override {return stop_price_;}
-
-private:
-
-  Price stop_price_;
-
+struct Fill {
+    OrderId   maker_order_id;
+    OrderId   taker_order_id;
+    TraderId  maker_trader_id;
+    TraderId  taker_trader_id;
+    Price     fill_price;
+    Quantity  fill_qty;
+    Timestamp ts;
 };
 
-#endif  // TRADINGENGINE_INCLUDE_ORDER_H_
+inline OrderId   get_order_id (const Order& o) { return std::visit([](const auto& x){ return x.id;        }, o); }
+inline TraderId  get_trader_id(const Order& o) { return std::visit([](const auto& x){ return x.trader_id; }, o); }
+inline Side      get_side     (const Order& o) { return std::visit([](const auto& x){ return x.side;      }, o); }
+inline Quantity  get_qty      (const Order& o) { return std::visit([](const auto& x){ return x.qty;       }, o); }
+inline Timestamp get_ts       (const Order& o) { return std::visit([](const auto& x){ return x.ts;        }, o); }

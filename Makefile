@@ -1,4 +1,6 @@
-all: build 
+.PHONY: all build test clean
+
+all: build
 
 build:
 	@echo "Building C++ components..."
