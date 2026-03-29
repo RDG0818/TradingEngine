@@ -13,14 +13,13 @@ export function useWebSocket(
   const onMessageRef = useRef(onMessage);
   const onStatusRef = useRef(onStatusChange);
   const retryDelayRef = useRef(1000);
-  const unmountedRef = useRef(false);
 
   // Keep refs current without triggering reconnect
   useEffect(() => { onMessageRef.current = onMessage; });
   useEffect(() => { onStatusRef.current = onStatusChange; });
 
-  const connect = useCallback(() => {
-    if (unmountedRef.current) return;
+  const connect = useCallback((cancelled: { value: boolean }) => {
+    if (cancelled.value) return;
 
     onStatusRef.current?.('connecting');
     const ws = new WebSocket(url);
@@ -36,12 +35,11 @@ export function useWebSocket(
     };
 
     ws.onclose = () => {
-      if (unmountedRef.current) return;
+      if (cancelled.value) return;
       onStatusRef.current?.('disconnected');
-      // Exponential backoff, cap at 30s
       const delay = retryDelayRef.current;
       retryDelayRef.current = Math.min(delay * 2, 30000);
-      setTimeout(connect, delay);
+      setTimeout(() => connect(cancelled), delay);
     };
 
     ws.onerror = () => {
@@ -50,10 +48,11 @@ export function useWebSocket(
   }, [url]);
 
   useEffect(() => {
-    unmountedRef.current = false;
-    connect();
+    retryDelayRef.current = 1000;  // reset backoff on URL change
+    const cancelled = { value: false };
+    connect(cancelled);
     return () => {
-      unmountedRef.current = true;
+      cancelled.value = true;
       wsRef.current?.close();
     };
   }, [connect]);
