@@ -1,5 +1,6 @@
 fastapi
 uvicorn[standard]
+httpx
 pybind11
 pybind11_stubgen
 

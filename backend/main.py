@@ -1,280 +1,474 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+import asyncio
+import json
+import logging
 from contextlib import asynccontextmanager
-from typing import Optional, Dict
+from typing import Optional
+
+import httpx
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import trading_engine_py
-import random
-import time
 
-# --- Global State ---
-trading_system: Optional[trading_engine_py.TradingSystem] = None
-default_trader_id: Optional[int] = None
-managed_traders: Dict[str, Dict] = {}
+import trading_engine_py as te
 
-SYMBOLS = ["SPY", "QQQ"]
+logger = logging.getLogger("talat")
 
-# --- Type Conversions ---
-trader_type_to_str = {
-    trading_engine_py.TraderType.RANDOM_MARKET: "Random Market",
-    trading_engine_py.TraderType.RANDOM_LIMIT: "Random Limit",
-    trading_engine_py.TraderType.MARKET_MAKER: "Market Maker",
-}
-str_to_trader_type = {v: k for k, v in trader_type_to_str.items()}
+# ---------------------------------------------------------------------------
+# Global state
+# ---------------------------------------------------------------------------
+
+exchange: Optional[te.Exchange] = None
+user_portfolio_id: Optional[int] = None  # default human trader
+
+# WebSocket connections + async queue bridging C++ callbacks → WS push
+ws_clients: set[WebSocket] = set()
+ws_queue: asyncio.Queue = asyncio.Queue()
+event_loop: Optional[asyncio.AbstractEventLoop] = None
+
+# ---------------------------------------------------------------------------
+# CoinGecko seed price
+# ---------------------------------------------------------------------------
+
+COINGECKO_URL = (
+    "https://api.coingecko.com/api/v3/simple/price"
+    "?ids=bitcoin&vs_currencies=usd"
+)
+FALLBACK_BTC_PRICE = 65000.0
 
 
-# --- App Lifecycle ---
+async def fetch_btc_price() -> float:
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(COINGECKO_URL)
+            r.raise_for_status()
+            return float(r.json()["bitcoin"]["usd"])
+    except Exception as e:
+        logger.warning(f"CoinGecko fetch failed ({e}), using fallback ${FALLBACK_BTC_PRICE:,.0f}")
+        return FALLBACK_BTC_PRICE
+
+
+def to_price(dollars: float) -> int:
+    """Convert dollar float to fixed-point price units (10000 = $1)."""
+    return int(dollars * 10000)
+
+
+def from_price(units: int) -> float:
+    """Convert fixed-point price units to dollars."""
+    return units / 10000
+
+
+# ---------------------------------------------------------------------------
+# WebSocket broadcast background task
+# ---------------------------------------------------------------------------
+
+async def ws_broadcaster():
+    """Drain ws_queue and push each message to all connected clients."""
+    while True:
+        msg = await ws_queue.get()
+        dead = set()
+        for ws in ws_clients:
+            try:
+                await ws.send_text(msg)
+            except Exception:
+                dead.add(ws)
+        ws_clients.difference_update(dead)
+
+
+# ---------------------------------------------------------------------------
+# App lifecycle
+# ---------------------------------------------------------------------------
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global trading_system, default_trader_id
-    trading_system = trading_engine_py.TradingSystem(100, SYMBOLS)
-    print("TradingSystem singleton instance created.")
+    global exchange, user_portfolio_id, event_loop
 
-    if trading_system:
-        default_trader_id = trading_system.create_portfolio(100000000)
-        print(f"Default portfolio created with trader_id: {default_trader_id}")
+    event_loop = asyncio.get_running_loop()
 
-    trading_system.start()
-    print("TradingSystem singleton instance started.")
+    # Fetch seed price
+    btc_usd = await fetch_btc_price()
+    seed_price = to_price(btc_usd)
+    logger.info(f"BTC seed price: ${btc_usd:,.2f} ({seed_price} units)")
 
+    # Create and start exchange
+    exchange = te.Exchange()
+
+    # Register C++ → asyncio bridge callbacks
+    def on_fill(fill: te.Fill):
+        msg = json.dumps({
+            "type": "trade",
+            "data": {
+                "price":          from_price(fill.fill_price),
+                "qty":            fill.fill_qty,
+                "maker_order_id": fill.maker_order_id,
+                "taker_order_id": fill.taker_order_id,
+                "maker_trader_id":fill.maker_trader_id,
+                "taker_trader_id":fill.taker_trader_id,
+            },
+        })
+        event_loop.call_soon_threadsafe(ws_queue.put_nowait, msg)
+
+    def on_book_update(snap: te.BookSnapshot):
+        msg = json.dumps({
+            "type": "book_update",
+            "data": {
+                "bids": [[from_price(p), q] for p, q in snap.bids[:20]],
+                "asks": [[from_price(p), q] for p, q in snap.asks[:20]],
+            },
+        })
+        event_loop.call_soon_threadsafe(ws_queue.put_nowait, msg)
+
+    exchange.on_fill_callback(on_fill)
+    exchange.on_book_update_callback(on_book_update)
+    exchange.start(seed_price)
+
+    # Seed default automated traders
+    mm  = exchange.add_market_maker("market_maker", 10_000_000_000, seed_price)
+    rlt = exchange.add_random_limit_trader("rand_limit", 2_000_000_000)
+    rmt = exchange.add_random_market_trader("rand_market", 2_000_000_000)
+    mom = exchange.add_momentum_trader("momentum", 5_000_000_000)
+    rev = exchange.add_mean_reversion_trader("mean_reversion", 5_000_000_000)
+    tf  = exchange.add_trend_follower("trend_follower", 5_000_000_000)
+    for tid in [mm, rlt, rmt, mom, rev, tf]:
+        exchange.start_trader(tid)
+
+    # Default human portfolio
+    user_portfolio_id = exchange.create_portfolio(10_000_000_000)  # $1M
+
+    # Start WS broadcaster
+    broadcaster_task = asyncio.create_task(ws_broadcaster())
+
+    logger.info("Exchange started.")
     yield
-    if trading_system and trading_system.is_running():
-        trading_system.stop()
-        print("TradingSystem singleton instance stopped.")
 
-app = FastAPI(lifespan=lifespan)
+    broadcaster_task.cancel()
+    if exchange and exchange.is_running():
+        exchange.stop()
+    logger.info("Exchange stopped.")
 
-# --- CORS ---
+
+app = FastAPI(title="Talat Trading Engine", lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost", "http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://localhost"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- Pydantic Models ---
-class ResetRequest(BaseModel):
-    trader_id: int
 
-class TraderData(BaseModel):
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
+
+class TraderCreate(BaseModel):
     name: str
-    type: str
-    parameters: Dict[str, float]
+    type: str  # "market_maker" | "momentum" | "mean_reversion" | "twap" | "trend_follower" | "random_limit" | "random_market"
+    balance: int = 5_000_000_000
+    # TWAP-specific
+    total_qty: int = 100
+    slices: int = 10
+    is_buy: bool = True
 
-class TraderParameters(BaseModel):
-    parameters: Dict[str, float]
+class OrderCreate(BaseModel):
+    trader_id: int
+    is_buy: bool
+    price: float         # dollars
+    qty: int
+    tif: str = "GTC"     # GTC | IOC | FOK
 
-# --- Endpoints ---
+class MarketOrderCreate(BaseModel):
+    trader_id: int
+    is_buy: bool
+    qty: int
 
-# Engine Endpoints
-@app.post("/engine/start")
-def start_engine():
-    if trading_system and not trading_system.is_running():
-        trading_system.start()
-        print("Trading engine started.")
-        return {"status": "Trading engine started."}
-    return {"status": "Trading engine is already running."}
+class EventTrigger(BaseModel):
+    type: str            # flash_crash | bull_run | liquidity_squeeze | mean_reversion_trap
+    duration_ticks: int = 30
 
-@app.post("/engine/stop")
-def stop_engine():
-    if trading_system and trading_system.is_running():
-        trading_system.stop()
-        print("Trading engine stopped.")
-        return {"status": "Trading engine stopped."}
-    return {"status": "Trading engine is not running."}
+class PortfolioReset(BaseModel):
+    trader_id: int
+    balance: int = 10_000_000_000
 
-@app.get("/engine/status")
-def get_engine_status():
-    is_running = trading_system.is_running() if trading_system else False
-    return {"isRunning": is_running}
 
-# Data Endpoints
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+EVENT_TYPE_MAP = {
+    "flash_crash":         te.MarketEventType.FlashCrash,
+    "bull_run":            te.MarketEventType.BullRun,
+    "liquidity_squeeze":   te.MarketEventType.LiquiditySqueeze,
+    "mean_reversion_trap": te.MarketEventType.MeanReversionTrap,
+}
+
+def _require_exchange() -> te.Exchange:
+    if exchange is None or not exchange.is_running():
+        raise HTTPException(status_code=503, detail="Exchange is not running")
+    return exchange
+
+
+def _trader_info_dict(info: te.TraderInfo) -> dict:
+    return {
+        "id":      info.id,
+        "name":    info.name,
+        "type":    info.type,
+        "active":  info.active,
+        "metrics": {
+            "orders_per_second": info.metrics.orders_per_second,
+            "pnl":               info.metrics.pnl,
+            "position":          info.metrics.position,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Engine endpoints
+# ---------------------------------------------------------------------------
 
 @app.get("/")
-def read_root():
-    return {"message": "Trading Engine API is running."}
+def root():
+    return {"status": "ok", "engine": exchange.is_running() if exchange else False}
 
-@app.get("/symbols")
-def get_symbols():
-    return {"symbols": trading_system.get_all_symbols() if trading_system else []}
+
+@app.post("/engine/start")
+def engine_start():
+    if exchange and not exchange.is_running():
+        exchange.start(to_price(FALLBACK_BTC_PRICE))
+    return {"running": exchange.is_running() if exchange else False}
+
+
+@app.post("/engine/stop")
+def engine_stop():
+    if exchange and exchange.is_running():
+        exchange.stop()
+    return {"running": False}
+
+
+@app.get("/engine/status")
+def engine_status():
+    return {"running": exchange.is_running() if exchange else False}
+
+
+# ---------------------------------------------------------------------------
+# Market data
+# ---------------------------------------------------------------------------
+
+@app.get("/book_snapshot")
+def book_snapshot():
+    ex = _require_exchange()
+    snap = ex.book_snapshot()
+    return {
+        "bids": [[from_price(p), q] for p, q in snap.bids],
+        "asks": [[from_price(p), q] for p, q in snap.asks],
+    }
+
+
+@app.get("/recent_trades")
+def recent_trades(limit: int = 50):
+    ex = _require_exchange()
+    fills = ex.recent_trades(limit)
+    return [
+        {
+            "price":           from_price(f.fill_price),
+            "qty":             f.fill_qty,
+            "maker_order_id":  f.maker_order_id,
+            "taker_order_id":  f.taker_order_id,
+            "maker_trader_id": f.maker_trader_id,
+            "taker_trader_id": f.taker_trader_id,
+        }
+        for f in fills
+    ]
 
 
 @app.get("/metrics")
-def get_system_metrics():
-    cpp_metrics = trading_system.get_system_metrics() if trading_system else None
-    if cpp_metrics is None:
-        return {"ordersProcessed": 0, "avgLatency": 0.0, "activeOrders": 0, "eventQueueDepth": 0, "throughput": 0.0}
+def metrics():
+    ex = _require_exchange()
+    m = ex.metrics()
     return {
-        "ordersProcessed": cpp_metrics.orders_processed,
-        "avgLatency": cpp_metrics.avg_latency_ms,
-        "activeOrders": cpp_metrics.active_orders,
-        "eventQueueDepth": cpp_metrics.event_queue_depth,
-        "throughput": cpp_metrics.throughput,
+        "orders_processed":  m.orders_processed,
+        "avg_latency_us":    m.avg_latency_us,
+        "throughput_per_s":  m.throughput_per_s,
+        "last_trade_price":  from_price(m.last_trade_price),
     }
 
-@app.get("/market_snapshot")
-def get_market_snapshot_data(symbol: str = ""):
-    target_symbol = symbol if symbol else SYMBOLS[0]
-    cpp_snapshot = trading_system.get_market_snapshot(target_symbol) if trading_system else None
-    if cpp_snapshot is None:
-        return { "bestBid": 0, "bestAsk": 0, "lastPrice": 0, "lastVolume": 0, "timestamp": int(time.time() * 1000) }
-    return {
-        "bestBid": round(cpp_snapshot.best_bid/10000, 2),
-        "bestAsk": round(cpp_snapshot.best_ask/10000, 2),
-        "lastPrice": round(cpp_snapshot.last_trade_price/10000, 2),
-        "lastVolume": cpp_snapshot.last_trade_quantity,
-        "timestamp": int(time.time() * 1000)
-    }
 
-@app.get("/trader/default_id")
-def get_default_trader_id():
-    return {"traderId": default_trader_id}
+# ---------------------------------------------------------------------------
+# Portfolio
+# ---------------------------------------------------------------------------
+
+@app.get("/portfolio/default_id")
+def portfolio_default_id():
+    return {"trader_id": user_portfolio_id}
+
 
 @app.get("/portfolio/{trader_id}")
-def get_portfolio_snapshot_data(trader_id: int):
-    if not trading_system:
-        return {"balance": 0, "positions": {}, "unrealizedPnl": 0}
-
-    cpp_snapshot = trading_system.get_portfolio_snapshot(trader_id)
-    if cpp_snapshot is None:
-        return { "balance": 0, "positions": {}, "unrealizedPnl": 0 }
-
-    symbols = trading_system.get_all_symbols()
-    positions_with_symbols = {}
-    for symbol_id, quantity in cpp_snapshot.positions.items():
-        if 0 <= symbol_id < len(symbols):
-            positions_with_symbols[symbols[symbol_id]] = quantity
-            
-    # NOTE: unrealizedPnl is a placeholder, a full implementation would
-    # require fetching current market prices to calculate this.
+def portfolio_snapshot(trader_id: int):
+    ex = _require_exchange()
+    snap = ex.portfolio_snapshot(trader_id)
     return {
-        "balance": cpp_snapshot.balance,
-        "positions": positions_with_symbols,
-        "unrealizedPnl": random.randint(-500, 500) # Placeholder with random data for visuals
+        "balance":        snap.balance,
+        "balance_usd":    from_price(snap.balance),
+        "position":       snap.position,
+        "unrealized_pnl": snap.unrealized_pnl,
+        "avg_cost":       from_price(snap.avg_cost),
     }
+
 
 @app.post("/portfolio/reset")
-def reset_portfolio(req: ResetRequest):
-    if trading_system:
-        trading_system.reset_balance(req.trader_id)
-        print(f"Portfolio reset for trader_id: {req.trader_id}")
-        return {"status": f"Portfolio for trader {req.trader_id} has been reset."}
-    return {"status": "Trading system not available."}
+def portfolio_reset(req: PortfolioReset):
+    ex = _require_exchange()
+    # Re-create portfolio with fresh balance (Exchange doesn't expose reset directly)
+    # Workaround: create a new portfolio ID and return it
+    new_id = ex.create_portfolio(req.balance)
+    global user_portfolio_id
+    if req.trader_id == user_portfolio_id:
+        user_portfolio_id = new_id
+    return {"trader_id": new_id, "balance": req.balance}
 
 
-# Automated Traders
+# ---------------------------------------------------------------------------
+# Orders
+# ---------------------------------------------------------------------------
+
+@app.post("/orders/limit")
+def submit_limit_order(order: OrderCreate):
+    ex = _require_exchange()
+    order_id = ex.submit_limit_order(
+        order.trader_id,
+        order.is_buy,
+        to_price(order.price),
+        order.qty,
+        order.tif,
+    )
+    return {"order_id": order_id}
+
+
+@app.post("/orders/market")
+def submit_market_order(order: MarketOrderCreate):
+    ex = _require_exchange()
+    order_id = ex.submit_market_order(order.trader_id, order.is_buy, order.qty)
+    return {"order_id": order_id}
+
+
+@app.delete("/orders/{order_id}")
+def cancel_order(order_id: int):
+    ex = _require_exchange()
+    ex.cancel_order(order_id)
+    return {"cancelled": order_id}
+
+
+# ---------------------------------------------------------------------------
+# Automated traders
+# ---------------------------------------------------------------------------
+
 @app.get("/traders")
-def get_traders():
-    if not trading_system:
-        return {"traders": []}
-    
-    traders_info = trading_system.get_all_traders()
-    trader_list = []
+def list_traders():
+    ex = _require_exchange()
+    return {"traders": [_trader_info_dict(t) for t in ex.all_traders()]}
 
-    for info in traders_info:
-        params = trading_system.get_trader_parameters(info.name) or {}
-        is_active = trading_system.is_trader_active(info.name)
-        metrics = trading_system.get_trader_metrics(info.id)
-        
-        trader_list.append({
-            "id": info.name,
-            "name": info.name,
-            "type": trader_type_to_str.get(info.type, "Unknown"),
-            "status": "running" if is_active else "idle",
-            "parameters": params,
-            "pnl": random.randint(-100, 200), # Placeholder
-            "latency": metrics.avg_latency_ms,
-            "ops": metrics.orders_per_second,
-            "recentHistory": [random.randint(0, 100) for _ in range(30)] if is_active else [] # Placeholder
-        })
-    return {"traders": trader_list}
 
-@app.post("/traders")
-def create_trader(trader_data: TraderData):
-    global managed_traders
-    if not trading_system:
-        raise HTTPException(status_code=503, detail="Trading system not available")
-
-    name = trader_data.name
-    params = trader_data.parameters
-    max_qty = int(params.get("max_quantity", 10))
-
-    # Check if a trader with the same name exists in the engine, not just our managed list
-    existing_traders = trading_system.get_all_traders()
-    if any(t.name == name for t in existing_traders):
-        raise HTTPException(status_code=409, detail=f"Trader with name '{name}' already exists in the engine.")
-
+@app.post("/traders", status_code=201)
+def create_trader(body: TraderCreate):
+    ex = _require_exchange()
+    t = body.type
     try:
-        if trader_data.type == "Random Market":
-            trading_system.add_random_market_trader(name, params["lambda"], max_qty)
-        elif trader_data.type == "Random Limit":
-            trading_system.add_random_limit_trader(name, params["lambda"], max_qty, params["normal_distribution_variance"])
-        elif trader_data.type == "Market Maker":
-            trading_system.add_market_maker_trader(name, params["mu"], params["sigma"], params["spread"], max_qty, {"SPY": 540.0})
+        if t == "market_maker":
+            m = ex.metrics()
+            seed = m.last_trade_price or to_price(FALLBACK_BTC_PRICE)
+            tid = ex.add_market_maker(body.name, body.balance, seed)
+        elif t == "momentum":
+            tid = ex.add_momentum_trader(body.name, body.balance)
+        elif t == "mean_reversion":
+            tid = ex.add_mean_reversion_trader(body.name, body.balance)
+        elif t == "twap":
+            tid = ex.add_twap_trader(body.name, body.balance, body.total_qty, body.slices, body.is_buy)
+        elif t == "trend_follower":
+            tid = ex.add_trend_follower(body.name, body.balance)
+        elif t == "random_limit":
+            tid = ex.add_random_limit_trader(body.name, body.balance)
+        elif t == "random_market":
+            tid = ex.add_random_market_trader(body.name, body.balance)
         else:
-            raise HTTPException(status_code=400, detail="Unknown trader type")
+            raise HTTPException(status_code=400, detail=f"Unknown trader type: {t!r}")
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create trader in engine: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    # After adding, it should be stopped by default
-    trading_system.stop_trader(name)
-    
-    managed_traders[name] = trader_data.dict()
-    # Return a response consistent with the GET /traders endpoint for a single trader
-    new_trader_response = {
-        "id": name, "name": name, "type": trader_data.type, 
-        "status": "idle", "parameters": params,
-        "pnl": 0, "latency": 0, "ops": 0, "recentHistory": []
-    }
-    return new_trader_response
-
-@app.put("/traders/{name}")
-def update_trader_parameters(name: str, data: TraderParameters):
-    if not trading_system:
-        raise HTTPException(status_code=503, detail="Trading system not available")
-
-    if not trading_system.set_trader_parameters(name, data.parameters):
-        raise HTTPException(status_code=500, detail="Failed to set trader parameters in engine.")
-
-    if name in managed_traders:
-        managed_traders[name]["parameters"] = data.parameters
-    
-    return {"status": "success"}
+    return {"trader_id": tid}
 
 
-@app.delete("/traders/{name}")
-def delete_trader(name: str):
-    global managed_traders
-    if not trading_system:
-        raise HTTPException(status_code=503, detail="Trading system not available")
-    
-    if trading_system.remove_trader(name):
-        if name in managed_traders:
-            del managed_traders[name]
-        return {"status": "success", "message": f"Trader '{name}' removed."}
+@app.delete("/traders/{trader_id}")
+def delete_trader(trader_id: int):
+    ex = _require_exchange()
+    ex.remove_trader(trader_id)
+    return {"removed": trader_id}
+
+
+@app.post("/traders/{trader_id}/start")
+def start_trader(trader_id: int):
+    ex = _require_exchange()
+    ex.start_trader(trader_id)
+    return {"trader_id": trader_id, "active": True}
+
+
+@app.post("/traders/{trader_id}/stop")
+def stop_trader(trader_id: int):
+    ex = _require_exchange()
+    ex.stop_trader(trader_id)
+    return {"trader_id": trader_id, "active": False}
+
+
+@app.post("/traders/{trader_id}/toggle")
+def toggle_trader(trader_id: int):
+    ex = _require_exchange()
+    info = next((t for t in ex.all_traders() if t.id == trader_id), None)
+    if info is None:
+        raise HTTPException(status_code=404, detail=f"Trader {trader_id} not found")
+    if info.active:
+        ex.stop_trader(trader_id)
+        return {"trader_id": trader_id, "active": False}
     else:
-        # Also try to remove from managed list if it exists there but not in engine
-        if name in managed_traders:
-            del managed_traders[name]
-            return {"status": "success", "message": f"Trader '{name}' removed from managed list (was not in engine)."}
-        raise HTTPException(status_code=404, detail=f"Trader '{name}' not found.")
+        ex.start_trader(trader_id)
+        return {"trader_id": trader_id, "active": True}
 
 
-@app.post("/traders/{name}/toggle")
-def toggle_trader_status(name: str):
-    if not trading_system:
-        raise HTTPException(status_code=503, detail="Trading system not available")
+# ---------------------------------------------------------------------------
+# Market events
+# ---------------------------------------------------------------------------
 
-    is_active = trading_system.is_trader_active(name)
+@app.get("/events")
+def list_events():
+    return {"events": [
+        {"id": e.id, "name": e.name, "description": e.description,
+         "default_duration_s": e.default_duration_s}
+        for e in te.all_market_events()
+    ]}
 
-    if is_active:
-        if trading_system.stop_trader(name):
-            return {"status": "stopped"}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to stop trader in engine.")
-    else:
-        if trading_system.start_trader(name):
-            return {"status": "started"}
-        else:
-            raise HTTPException(status_code=500, detail="Failed to start trader in engine.")
+
+@app.post("/events/trigger")
+def trigger_event(body: EventTrigger):
+    ex = _require_exchange()
+    event_type = EVENT_TYPE_MAP.get(body.type)
+    if event_type is None:
+        raise HTTPException(status_code=400, detail=f"Unknown event type: {body.type!r}")
+    ex.trigger_event(event_type, body.duration_ticks)
+    return {"triggered": body.type, "duration_ticks": body.duration_ticks}
+
+
+# ---------------------------------------------------------------------------
+# WebSocket
+# ---------------------------------------------------------------------------
+
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    await ws.accept()
+    ws_clients.add(ws)
+    try:
+        while True:
+            await ws.receive_text()  # keep alive; client can send pings
+    except WebSocketDisconnect:
+        pass
+    finally:
+        ws_clients.discard(ws)
