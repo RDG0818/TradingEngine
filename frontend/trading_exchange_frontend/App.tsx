@@ -4,6 +4,7 @@ import { TabId } from './types';
 import OrderBook from './components/OrderBook';
 import CandlestickChart from './components/CandlestickChart';
 import TradesPanel from './components/tabs/TradesPanel';
+import TradersPanel from './components/tabs/TradersPanel';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'trades',    label: 'Trades'    },
@@ -76,8 +77,9 @@ const App: React.FC = () => {
 
         {/* Tab content */}
         <div className="flex-1 overflow-hidden">
-          {activeTab === 'trades' && <TradesPanel />}
-          {activeTab !== 'trades' && (
+          {activeTab === 'trades'   && <TradesPanel />}
+          {activeTab === 'traders'  && <TradersPanel />}
+          {activeTab !== 'trades' && activeTab !== 'traders' && (
             <div className="text-neutral-600 text-xs p-4">{activeTab}</div>
           )}
         </div>
