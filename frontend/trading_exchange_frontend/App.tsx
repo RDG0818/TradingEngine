@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useApp } from './context/AppContext';
 import { TabId } from './types';
 import OrderBook from './components/OrderBook';
+import CandlestickChart from './components/CandlestickChart';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'trades',    label: 'Trades'    },
@@ -53,7 +54,7 @@ const App: React.FC = () => {
 
         {/* Candlestick chart */}
         <div className="h-[35%] flex-shrink-0 border-b border-[#1a1a1a]">
-          <div className="text-neutral-600 text-xs p-4">chart</div>
+          <CandlestickChart />
         </div>
 
         {/* Tab bar */}
