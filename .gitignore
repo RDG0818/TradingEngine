@@ -3,5 +3,5 @@ build
 data.csv
 .cache/
 .worktrees/
-.superpowers/build_verify/
+.superpowers/
 build/
