@@ -1,62 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import Sidebar from './components/Sidebar';
-import Header from './components/Header';
-import MarketSnapshot from './components/MarketSnapshot';
-import SystemOverview from './components/SystemOverview';
-import Settings from './components/pages/Settings';
-import AutomatedTraderSettings from './components/pages/AutomatedTraderSettings';
-import ManualTrading from './components/pages/ManualTrading';
-import LiveEventLog from './components/LiveEventLog';
-import Portfolio from './components/Portfolio';
-
-type Page = 'Dashboard' | 'AutomatedTraders' | 'Settings' | 'ManualTrading';
+import React, { useEffect } from 'react';
 
 const App: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState<Page>('Dashboard');
-
   useEffect(() => {
-    const root = window.document.documentElement;
-    root.classList.add('dark');
+    document.documentElement.classList.add('dark');
   }, []);
 
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'ManualTrading':
-        return <ManualTrading />;
-      case 'AutomatedTraders':
-        return <AutomatedTraderSettings />;
-      case 'Settings':
-        return <Settings />;
-      case 'Dashboard':
-      default:
-        return (
-          <div className="max-w-6xl mx-auto flex flex-col gap-6">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                <div className="lg:col-span-6 h-[380px]">
-                    <Portfolio />
-                </div>
-                <div className="lg:col-span-6 h-[380px]">
-                    <LiveEventLog />
-                </div>
-            </div>
-            <div>
-                <MarketSnapshot />
-            </div>
-            <SystemOverview />
-          </div>
-        );
-    }
-  };
-
   return (
-    <div className="flex h-screen w-full bg-white dark:bg-neutral-950 text-neutral-800 dark:text-neutral-200 font-sans selection:bg-emerald-900/50 selection:text-emerald-200">
-      <Sidebar currentPage={currentPage} setCurrentPage={setCurrentPage} />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Header />
-        <main className="flex-1 overflow-y-hidden p-4 lg:p-8 no-scrollbar">
-          {renderPage()}
-        </main>
-      </div>
+    <div className="flex h-screen w-full bg-neutral-950 text-neutral-200 font-mono">
+      <p className="m-auto text-neutral-500">Talat — loading…</p>
     </div>
   );
 };

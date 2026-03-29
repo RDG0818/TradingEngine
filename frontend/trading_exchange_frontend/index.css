@@ -1,0 +1,3 @@
+/* frontend/trading_exchange_frontend/index.css */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
