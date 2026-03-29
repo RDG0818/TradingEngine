@@ -13,6 +13,10 @@ function computeDepthBars(levels: [number, number][]): { price: number; qty: num
   return rows.map(r => ({ ...r, barPct: (r.cum / maxCum) * 100 }));
 }
 
+function fmtPrice(p: number): string {
+  return p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 const OrderBook: React.FC = () => {
   const { book, lastTradePrice } = useApp();
 
@@ -34,9 +38,6 @@ const OrderBook: React.FC = () => {
     if (bestAsk === Infinity || bestBid === 0) return null;
     return (bestAsk - bestBid).toFixed(2);
   }, [book]);
-
-  const fmtPrice = (p: number) =>
-    p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
     <div className="flex flex-col h-full text-[11px] select-none">
