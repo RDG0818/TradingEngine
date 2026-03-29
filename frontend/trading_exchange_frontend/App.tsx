@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from './context/AppContext';
 import { TabId } from './types';
+import OrderBook from './components/OrderBook';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'trades',    label: 'Trades'    },
@@ -34,9 +35,8 @@ const App: React.FC = () => {
             {wsStatus === 'connected' ? '● live' : wsStatus === 'connecting' ? '○ connecting' : '○ disconnected'}
           </span>
         </div>
-        {/* OrderBook placeholder */}
         <div className="flex-1 overflow-hidden">
-          <div className="text-neutral-600 text-xs p-4">order book</div>
+          <OrderBook />
         </div>
       </div>
 
