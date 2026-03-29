@@ -6,6 +6,8 @@ export interface BookSnapshot {
 export interface Trade {
   price: number;
   qty: number;
+  maker_order_id: number;
+  taker_order_id: number;
   maker_trader_id: number;
   taker_trader_id: number;
 }
@@ -45,7 +47,7 @@ export interface MarketEvent {
 }
 
 export interface PortfolioSnapshot {
-  balance: number;       // fixed-point
+  balance: number;       // fixed-point: divide by 10000 for USD
   balance_usd: number;   // USD float
   position: number;      // integer BTC units
   unrealized_pnl: number; // fixed-point: divide by 10000 for USD
