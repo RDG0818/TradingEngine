@@ -2,7 +2,6 @@ import React, {
   createContext,
   useContext,
   useEffect,
-  useRef,
   useState,
   useCallback,
 } from 'react';
@@ -46,7 +45,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [trades, setTrades] = useState<TradeWithTimestamp[]>([]);
   const [wsStatus, setWsStatus] = useState<WsStatus>('connecting');
   const [userTraderId, setUserTraderId] = useState<number | null>(null);
-  const lastTradePriceRef = useRef<number | null>(null);
   const [lastTradePrice, setLastTradePrice] = useState<number | null>(null);
 
   const { candles, addTrade, seedTrades } = useCandlesticks(10_000);
@@ -79,7 +77,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
         if (stamped.length > 0) {
           const last = stamped[stamped.length - 1].price;
-          lastTradePriceRef.current = last;
           setLastTradePrice(last);
         }
       })
@@ -101,10 +98,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setBook(msg.data as BookSnapshot);
       } else if (msg.type === 'trade') {
         const trade: TradeWithTimestamp = {
-          ...msg.data,
+          price: msg.data.price,
+          qty: msg.data.qty,
+          maker_order_id: msg.data.maker_order_id,
+          taker_order_id: msg.data.taker_order_id,
+          maker_trader_id: msg.data.maker_trader_id,
+          taker_trader_id: msg.data.taker_trader_id,
           timestamp: Date.now(),
         };
-        lastTradePriceRef.current = trade.price;
         setLastTradePrice(trade.price);
         setTrades(prev => {
           const next = [trade, ...prev];
