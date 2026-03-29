@@ -1,23 +1,34 @@
-.PHONY: all build test clean
+.PHONY: all build test cpp-test bench clean rebuild
+
+PYTHON := $(shell conda run -n talat which python3 2>/dev/null || which python3)
+BUILD_DIR := build
 
 all: build
 
 build:
-	@echo "Building C++ components..."
-	@rm -rf build
-	@cmake -B build -S . -DPython3_EXECUTABLE=$(which python3)
-	@cmake --build build
-	@PYTHONPATH=./backend python3 -m pybind11_stubgen trading_engine_py --output-dir=backend --enum-class-locations TimeInForce:trading_engine_py.TimeInForce
-	@echo "Build complete."
+	@echo "Configuring..."
+	@cmake -B $(BUILD_DIR) -S . -DPython3_EXECUTABLE=$(PYTHON) -DCMAKE_BUILD_TYPE=Release
+	@echo "Building..."
+	@cmake --build $(BUILD_DIR)
+	@echo "Build complete. .so → backend/"
 
-test: build
+rebuild:
+	@rm -rf $(BUILD_DIR)
+	@$(MAKE) build
+
+test: build cpp-test
+
+cpp-test:
 	@echo "Running C++ tests..."
-	@./build/tests
-	@echo "Running Python tests..."
-	@PYTHONPATH=./python pytest
-	@echo "All tests completed."
+	@./$(BUILD_DIR)/tests
+	@echo "All C++ tests passed."
+
+bench:
+	@echo "Building benchmarks..."
+	@cmake --build $(BUILD_DIR) --target benchmarks
+	@echo "Running benchmarks..."
+	@./$(BUILD_DIR)/benchmarks
 
 clean:
-	@echo "Cleaning build artifacts..."
-	@rm -rf build
-	@echo "Clean complete."
+	@rm -rf $(BUILD_DIR)
+	@echo "Cleaned."
