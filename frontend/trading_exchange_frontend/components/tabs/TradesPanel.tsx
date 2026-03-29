@@ -37,7 +37,7 @@ const TradesPanel: React.FC = () => {
           const isUp = !prev || trade.price >= prev.price;
           return (
             <div
-              key={`${trade.timestamp}-${i}`}
+              key={`${trade.maker_order_id}-${trade.taker_order_id}`}
               className="flex justify-between items-center px-3 py-[2px] text-[11px] hover:bg-[#111]"
             >
               <span className={isUp ? 'text-green-400' : 'text-red-400'}>
