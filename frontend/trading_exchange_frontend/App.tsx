@@ -6,6 +6,7 @@ import CandlestickChart from './components/CandlestickChart';
 import TradesPanel from './components/tabs/TradesPanel';
 import TradersPanel from './components/tabs/TradersPanel';
 import EventsPanel from './components/tabs/EventsPanel';
+import PortfolioPanel from './components/tabs/PortfolioPanel';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'trades',    label: 'Trades'    },
@@ -81,9 +82,7 @@ const App: React.FC = () => {
           {activeTab === 'trades'    && <TradesPanel />}
           {activeTab === 'traders'   && <TradersPanel />}
           {activeTab === 'events'    && <EventsPanel />}
-          {activeTab === 'portfolio' && (
-            <div className="text-neutral-600 text-xs p-4">portfolio</div>
-          )}
+          {activeTab === 'portfolio' && <PortfolioPanel />}
         </div>
 
       </div>
