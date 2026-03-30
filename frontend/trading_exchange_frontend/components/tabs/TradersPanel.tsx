@@ -67,7 +67,7 @@ const TradersPanel: React.FC = () => {
         <span className="w-[110px]">Name</span>
         <span className="w-[40px]">Type</span>
         <span className="w-[64px] text-right">PnL</span>
-        <span className="w-[48px] text-right">Fills</span>
+        <span className="w-[48px] text-right">OPS</span>
         <span className="ml-auto">On</span>
       </div>
 
