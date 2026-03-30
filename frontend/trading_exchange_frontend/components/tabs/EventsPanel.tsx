@@ -33,6 +33,14 @@ const EventsPanel: React.FC = () => {
         body: JSON.stringify({ type: eventId, duration_ticks: 30 }),
       });
       setLastFired(prev => ({ ...prev, [eventId]: Date.now() }));
+      // Clear the badge after 3s
+      setTimeout(() => {
+        setLastFired(prev => {
+          const next = { ...prev };
+          delete next[eventId];
+          return next;
+        });
+      }, 3000);
     } catch {
       // ignore
     } finally {
