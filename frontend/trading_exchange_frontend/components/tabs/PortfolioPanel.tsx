@@ -39,10 +39,12 @@ const PortfolioPanel: React.FC = () => {
     const qtyNum = parseInt(qty, 10);
     if (!qtyNum || qtyNum <= 0) {
       setFeedback({ ok: false, msg: 'Invalid quantity' });
+      setTimeout(() => setFeedback(null), 4000);
       return;
     }
     if (orderType === 'limit' && (!price || parseFloat(price) <= 0)) {
       setFeedback({ ok: false, msg: 'Invalid price' });
+      setTimeout(() => setFeedback(null), 4000);
       return;
     }
 
