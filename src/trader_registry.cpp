@@ -42,9 +42,9 @@ void TraderRegistry::tick_loop() {
             std::unique_lock lock(mutex_);
             for (auto& [id, trader] : traders_) {
                 if (!active_traders_[id]) continue;
-                trader->tick(last_price_, [this](Order o) {
-                    matcher_.submit(std::move(o));
-                });
+                trader->tick(last_price_,
+                    [this](Order o) { matcher_.submit(std::move(o)); },
+                    [](OrderId) -> bool { return false; });
             }
         }
         std::this_thread::sleep_for(10ms);

@@ -12,10 +12,6 @@ void Exchange::start(Price seed_price) {
     last_trade_price_ = seed_price;
 
     bus_.subscribe<FillEvent>([this](const FillEvent& e) { on_fill(e); });
-    bus_.subscribe<BookUpdateEvent>([this](const BookUpdateEvent& e) {
-        std::lock_guard lock(cb_mutex_);
-        if (book_update_cb_) book_update_cb_(e.snapshot);
-    });
     registry_.subscribe_to_fills(bus_);
 
     matcher_.start();
@@ -93,19 +89,4 @@ void Exchange::on_fill(const FillEvent& e) {
             recent_trades_.pop_front();
     }
 
-    // Fire fill callback.
-    {
-        std::lock_guard lock(cb_mutex_);
-        if (fill_cb_) fill_cb_(e.fill);
-    }
-}
-
-void Exchange::on_fill_callback(FillCallback cb) {
-    std::lock_guard lock(cb_mutex_);
-    fill_cb_ = std::move(cb);
-}
-
-void Exchange::on_book_update_callback(BookUpdateCallback cb) {
-    std::lock_guard lock(cb_mutex_);
-    book_update_cb_ = std::move(cb);
 }

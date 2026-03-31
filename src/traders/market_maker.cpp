@@ -10,7 +10,7 @@ MarketMakerTrader::MarketMakerTrader(TraderId id, std::string name,
       log_price_(std::log(static_cast<double>(seed_price))),
       rng_(std::random_device{}()) {}
 
-void MarketMakerTrader::tick(Price /*last_price*/, SubmitFn submit) {
+void MarketMakerTrader::tick(Price /*last_price*/, SubmitFn submit, CancelFn /*cancel*/) {
     // GBM step: log_price += noise
     log_price_ += gbm_noise_(rng_);
     ref_price_ = static_cast<Price>(std::exp(log_price_));

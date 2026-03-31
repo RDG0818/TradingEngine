@@ -30,9 +30,6 @@ struct PortfolioSnapshot {
     Price    avg_cost;
 };
 
-using FillCallback       = std::function<void(const Fill&)>;
-using BookUpdateCallback = std::function<void(const BookSnapshot&)>;
-
 class Exchange {
 public:
     Exchange();
@@ -65,10 +62,6 @@ public:
     void stop_trader(TraderId id)    { registry_.stop_trader(id); }
     std::vector<TraderInfo> all_traders() const { return registry_.all_traders(); }
 
-    // Python callback hooks.
-    void on_fill_callback(FillCallback cb);
-    void on_book_update_callback(BookUpdateCallback cb);
-
     EventBus& event_bus() { return bus_; }
 
 private:
@@ -90,8 +83,4 @@ private:
     std::atomic<uint64_t> orders_processed_{0};
     Price                 last_trade_price_{0};
     Price                 seed_price_{0};
-
-    FillCallback       fill_cb_;
-    BookUpdateCallback book_update_cb_;
-    std::mutex         cb_mutex_;
 };

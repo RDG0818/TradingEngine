@@ -7,7 +7,7 @@ class MarketMakerTrader : public Trader {
 public:
     // seed_price: initial reference price for GBM (in Price units).
     MarketMakerTrader(TraderId id, std::string name, uint64_t balance, Price seed_price);
-    void tick(Price last_price, SubmitFn submit) override;
+    void tick(Price last_price, SubmitFn submit, CancelFn cancel) override;
 
 private:
     Price                              ref_price_;

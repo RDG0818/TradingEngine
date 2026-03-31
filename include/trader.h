@@ -8,6 +8,8 @@
 
 // Callback the trader uses to submit orders.
 using SubmitFn = std::function<void(Order)>;
+// Callback the trader uses to cancel a resting order by ID.
+using CancelFn = std::function<bool(OrderId)>;
 
 struct TraderMetrics {
     double  orders_per_second{0.0};
@@ -21,7 +23,7 @@ public:
     virtual ~Trader() = default;
 
     // Called each tick by TraderRegistry.
-    virtual void tick(Price last_price, SubmitFn submit) = 0;
+    virtual void tick(Price last_price, SubmitFn submit, CancelFn cancel) = 0;
 
     // Called when a fill is received for one of this trader's orders.
     virtual void on_fill(const Fill& fill) { portfolio_.apply_fill(fill.maker_trader_id == id_ ? Side::Sell : Side::Buy, fill.fill_price, fill.fill_qty); }
