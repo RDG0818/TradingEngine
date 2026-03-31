@@ -3,7 +3,7 @@
 #include "exchange_events.h"
 
 Exchange::Exchange()
-    : matcher_(bus_), registry_(matcher_) {}
+    : matcher_(bus_), registry_(matcher_, bus_, 0) {}
 
 Exchange::~Exchange() { stop(); }
 
@@ -11,8 +11,9 @@ void Exchange::start(Price seed_price) {
     seed_price_       = seed_price;
     last_trade_price_ = seed_price;
 
+    registry_.reset_latent(seed_price);
+
     bus_.subscribe<FillEvent>([this](const FillEvent& e) { on_fill(e); });
-    registry_.subscribe_to_fills(bus_);
 
     matcher_.start();
     registry_.start();

@@ -52,14 +52,13 @@ public:
     SystemMetrics     metrics() const;
 
     // Trader management (delegates to TraderRegistry).
-    template<typename T, typename... Args>
-    TraderId add_trader(std::string name, Args&&... args) {
-        return registry_.add_trader<T>(std::move(name), std::forward<Args>(args)...);
-    }
-    void remove_trader(TraderId id)  { registry_.remove_trader(id); }
-    void start_trader(TraderId id)   { registry_.start_trader(id); }
-    void stop_trader(TraderId id)    { registry_.stop_trader(id); }
-    std::vector<TraderInfo> all_traders() const { return registry_.all_traders(); }
+    TraderId add_market_maker(std::string name, uint64_t balance)  { return registry_.add_market_maker(std::move(name), balance); }
+    TraderId add_informed_trader(std::string name, uint64_t balance) { return registry_.add_informed_trader(std::move(name), balance); }
+    TraderId add_noise_trader(std::string name, uint64_t balance, double lambda = 0.7) { return registry_.add_noise_trader(std::move(name), balance, lambda); }
+    void remove_trader(TraderId id) { registry_.remove_trader(id); }
+    void pause_traders()  { registry_.pause_all(); }
+    void resume_traders() { registry_.resume_all(); }
+    TraderRegistry& registry() { return registry_; }
 
     EventBus& event_bus() { return bus_; }
 

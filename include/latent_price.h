@@ -30,6 +30,13 @@ public:
     void set_sigma(double sigma) { sigma_ = sigma; }
     double sigma() const { return sigma_; }
 
+    void reinit(Price seed_price, double sigma) {
+        sigma_ = sigma;
+        log_price_ = std::log(static_cast<double>(seed_price) / 10000.0);
+        rng_ = std::mt19937{std::random_device{}()};
+        price_.store(seed_price, std::memory_order_release);
+    }
+
 private:
     std::atomic<Price> price_{};
     double log_price_;
