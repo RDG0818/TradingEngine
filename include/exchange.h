@@ -9,7 +9,6 @@
 #include "exchange_events.h"
 #include <atomic>
 #include <deque>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
