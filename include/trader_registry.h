@@ -2,15 +2,6 @@
 #pragma once
 #include "trader.h"
 #include "order_matcher.h"
-#include "traders/random_market.h"
-#include "traders/random_limit.h"
-#include "traders/market_maker.h"
-#include "traders/momentum.h"
-#include "traders/mean_reversion.h"
-#include "traders/twap.h"
-#include "traders/trend_follower.h"
-#include "traders/panic.h"
-#include "market_events.h"
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -51,8 +42,6 @@ public:
     void start_trader(TraderId id);
     void stop_trader(TraderId id);
 
-    void trigger_event(MarketEventType type, int duration_ticks = 30);
-
     std::optional<TraderInfo>  trader_info(TraderId id) const;
     std::vector<TraderInfo>    all_traders() const;
 
@@ -71,7 +60,4 @@ private:
     std::atomic<bool>                                     running_{false};
     std::thread                                           tick_thread_;
     std::atomic<TraderId>                                 next_trader_id_{1000};
-
-    // Track panic traders spawned by events for cleanup.
-    std::vector<TraderId> event_traders_;
 };

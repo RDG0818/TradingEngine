@@ -6,7 +6,6 @@
 #include "event_bus.h"
 #include "trader_registry.h"
 #include "portfolio.h"
-#include "market_events.h"
 #include "exchange_events.h"
 #include <atomic>
 #include <deque>
@@ -64,9 +63,6 @@ public:
     void remove_trader(TraderId id)  { registry_.remove_trader(id); }
     void start_trader(TraderId id)   { registry_.start_trader(id); }
     void stop_trader(TraderId id)    { registry_.stop_trader(id); }
-    void trigger_event(MarketEventType type, int duration_ticks = 30) {
-        registry_.trigger_event(type, duration_ticks);
-    }
     std::vector<TraderInfo> all_traders() const { return registry_.all_traders(); }
 
     // Python callback hooks.

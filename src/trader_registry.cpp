@@ -46,16 +46,6 @@ void TraderRegistry::tick_loop() {
                     matcher_.submit(std::move(o));
                 });
             }
-            // Clean up expired panic traders.
-            for (auto it = event_traders_.begin(); it != event_traders_.end(); ) {
-                auto t_it = traders_.find(*it);
-                if (t_it == traders_.end()) { it = event_traders_.erase(it); continue; }
-                if (auto* pt = dynamic_cast<PanicTrader*>(t_it->second.get()); pt && pt->is_done()) {
-                    traders_.erase(t_it);
-                    active_traders_.erase(*it);
-                    it = event_traders_.erase(it);
-                } else ++it;
-            }
         }
         std::this_thread::sleep_for(10ms);
     }
@@ -71,56 +61,6 @@ void TraderRegistry::subscribe_to_fills(EventBus& bus) {
             if (it != traders_.end()) it->second->on_fill(e.fill);
         }
     });
-}
-
-void TraderRegistry::trigger_event(MarketEventType type, int duration_ticks) {
-    std::unique_lock lock(mutex_);
-    switch (type) {
-        case MarketEventType::FlashCrash: {
-            // Suspend market makers temporarily, spawn panic sellers.
-            for (auto& [id, t_name] : type_names_)
-                if (t_name.find("MarketMaker") != std::string::npos)
-                    active_traders_[id] = false;
-
-            for (int i = 0; i < 4; ++i) {
-                TraderId pid = next_trader_id_.fetch_add(1);
-                auto pt = std::make_unique<PanicTrader>(pid, "panic_" + std::to_string(pid),
-                                                        5000000ULL, Side::Sell, 20, duration_ticks);
-                active_traders_[pid] = true;
-                event_traders_.push_back(pid);
-                traders_.emplace(pid, std::move(pt));
-            }
-            break;
-        }
-        case MarketEventType::BullRun: {
-            for (int i = 0; i < 3; ++i) {
-                TraderId pid = next_trader_id_.fetch_add(1);
-                auto pt = std::make_unique<PanicTrader>(pid, "bull_" + std::to_string(pid),
-                                                        5000000ULL, Side::Buy, 30, duration_ticks);
-                active_traders_[pid] = true;
-                event_traders_.push_back(pid);
-                traders_.emplace(pid, std::move(pt));
-            }
-            break;
-        }
-        case MarketEventType::LiquiditySqueeze: {
-            for (auto& [id, t_name] : type_names_)
-                if (t_name.find("RandomLimit") != std::string::npos)
-                    active_traders_[id] = false;
-            break;
-        }
-        case MarketEventType::MeanReversionTrap: {
-            for (int i = 0; i < 2; ++i) {
-                TraderId pid = next_trader_id_.fetch_add(1);
-                auto pt = std::make_unique<PanicTrader>(pid, "trap_" + std::to_string(pid),
-                                                        5000000ULL, Side::Buy, 50, duration_ticks);
-                active_traders_[pid] = true;
-                event_traders_.push_back(pid);
-                traders_.emplace(pid, std::move(pt));
-            }
-            break;
-        }
-    }
 }
 
 std::optional<TraderInfo> TraderRegistry::trader_info(TraderId id) const {
