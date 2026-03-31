@@ -1,20 +1,29 @@
-// include/traders/market_maker.h
 #pragma once
+#include <vector>
 #include "trader.h"
-#include <random>
+#include "latent_price.h"
 
-class MarketMakerTrader : public Trader {
+class MarketMaker : public Trader {
 public:
-    // seed_price: initial reference price for GBM (in Price units).
-    MarketMakerTrader(TraderId id, std::string name, uint64_t balance, Price seed_price);
+    MarketMaker(TraderId id, std::string name, uint64_t balance,
+                const LatentPrice& latent,
+                Price half_spread = 20000);
+
     void tick(Price last_price, SubmitFn submit, CancelFn cancel) override;
+    void on_fill(const Fill& fill) override;
+
+    void set_half_spread(Price spread) { half_spread_ = spread; }
+    Price half_spread() const { return half_spread_; }
 
 private:
-    Price                              ref_price_;
-    double                             log_price_;   // log of ref_price for GBM
-    std::mt19937                       rng_;
-    std::normal_distribution<double>   gbm_noise_{0.0, 0.001}; // sigma per tick
-    std::uniform_int_distribution<int> qty_dist_{5, 20};
+    const LatentPrice& latent_;
+    Price half_spread_;
+    std::vector<OrderId> resting_bids_;
+    std::vector<OrderId> resting_asks_;
 
-    static constexpr double SPREAD_HALF = 50.0; // half-spread in Price units ($0.005)
+    uint64_t fills_in_window_{0};
+    uint64_t ticks_in_window_{0};
+    Price    effective_spread_{0};  // persists across window boundary
+    static constexpr uint64_t WINDOW_TICKS = 20;
+    static constexpr double MAX_SPREAD_MULTIPLIER = 3.0;
 };
