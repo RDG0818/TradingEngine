@@ -49,20 +49,21 @@ void OrderMatcher::run_loop() {
 }
 
 void OrderMatcher::process_order(const Order& order) {
-    std::visit([this](const auto& o) {
+    auto dequeue_tp = std::chrono::steady_clock::now();
+    std::visit([this, dequeue_tp](const auto& o) {
         using T = std::decay_t<decltype(o)>;
-        if      constexpr (std::is_same_v<T, LimitOrder>)      process_limit(o);
-        else if constexpr (std::is_same_v<T, MarketOrder>)     process_market(o);
+        if      constexpr (std::is_same_v<T, LimitOrder>)      process_limit(o, dequeue_tp);
+        else if constexpr (std::is_same_v<T, MarketOrder>)     process_market(o, dequeue_tp);
         else if constexpr (std::is_same_v<T, StopLimitOrder>)  process_stop_limit(o);
         else if constexpr (std::is_same_v<T, StopMarketOrder>) process_stop_market(o);
     }, order);
 }
 
-void OrderMatcher::process_limit(const LimitOrder& order) {
-    try_match_limit(order);
+void OrderMatcher::process_limit(const LimitOrder& order, std::chrono::steady_clock::time_point dequeue_tp) {
+    try_match_limit(order, dequeue_tp);
 }
 
-void OrderMatcher::try_match_limit(const LimitOrder& taker) {
+void OrderMatcher::try_match_limit(const LimitOrder& taker, std::chrono::steady_clock::time_point dequeue_tp) {
     Quantity remaining = taker.qty;
     auto now = std::chrono::steady_clock::now().time_since_epoch();
     Price last_price = 0;
@@ -108,7 +109,7 @@ void OrderMatcher::try_match_limit(const LimitOrder& taker) {
         LimitOrder resting = taker;
         resting.qty = remaining;
         book_.add_order(resting);
-        bus_.publish(OrderAcceptedEvent{taker.id, taker.trader_id});
+        bus_.publish(OrderAcceptedEvent{taker.id, taker.trader_id, dequeue_tp});
         bus_.publish(BookUpdateEvent{book_.snapshot()});
     } else if (remaining > 0 && taker.tif != TimeInForce::GTC) {
         // IOC/FOK: remaining portion is not rested.
@@ -131,12 +132,12 @@ void OrderMatcher::try_match_limit(const LimitOrder& taker) {
     }
 }
 
-void OrderMatcher::process_market(const MarketOrder& order) {
+void OrderMatcher::process_market(const MarketOrder& order, std::chrono::steady_clock::time_point dequeue_tp) {
     // Convert to aggressive limit at extreme price, IOC semantics.
     Price aggressive_price = (order.side == Side::Buy) ? UINT64_MAX : 0;
     LimitOrder synthetic{order.id, order.trader_id, order.side,
                          aggressive_price, order.qty, TimeInForce::IOC, order.ts};
-    try_match_limit(synthetic);
+    try_match_limit(synthetic, dequeue_tp);
 }
 
 void OrderMatcher::process_stop_limit(const StopLimitOrder& order) {
@@ -159,7 +160,7 @@ void OrderMatcher::check_stop_orders(Price last_price) {
         auto& o = pending_stop_limits_.at(id);
         LimitOrder triggered{o.id, o.trader_id, o.side, o.limit_price, o.qty,
                              TimeInForce::GTC, o.ts};
-        process_limit(triggered);
+        process_limit(triggered, std::chrono::steady_clock::now());
         pending_stop_limits_.erase(id);
     }
     to_trigger.clear();
@@ -172,7 +173,7 @@ void OrderMatcher::check_stop_orders(Price last_price) {
     for (OrderId id : to_trigger) {
         auto& o = pending_stop_markets_.at(id);
         MarketOrder triggered{o.id, o.trader_id, o.side, o.qty, TimeInForce::IOC, o.ts};
-        process_market(triggered);
+        process_market(triggered, std::chrono::steady_clock::now());
         pending_stop_markets_.erase(id);
     }
 }
