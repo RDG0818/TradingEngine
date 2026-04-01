@@ -339,7 +339,23 @@ void TUI::handle_slash_command(const std::string& cmd) {
     };
 
     if (verb == "help") {
-        set_status("/vol <0-1>  /spread <$>  /speed <1-10>  /pause  /resume  /traders <mm|informed|noise> <n>  q=quit");
+        set_status(
+            "ORDERS\n"
+            "  buy <qty> @ <price>   limit buy (GTC)\n"
+            "  sell <qty> @ <price>  limit sell (GTC)\n"
+            "  buy <qty>             market buy (IOC)\n"
+            "  sell <qty>            market sell (IOC)\n"
+            "  cancel <id>           cancel resting order\n"
+            "  q / quit              exit\n"
+            "\n"
+            "MARKET CONTROLS  (defaults)\n"
+            "  /vol <0.0-1.0>        GBM volatility sigma (0.0003)\n"
+            "  /spread <dollars>     MM half-spread in $ (2.00)\n"
+            "  /speed <1-10>         tick speed, 1=2s 10=200ms (1)\n"
+            "  /pause / /resume      halt/restart all traders\n"
+            "  /traders <mm|informed|noise> <n>\n"
+            "                        set trader count (1/2/3)"
+        );
         return;
     }
     if (verb == "vol") {
