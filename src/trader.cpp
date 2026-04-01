@@ -11,7 +11,7 @@ Trader::Trader(TraderId id, std::string name, uint64_t starting_balance)
 TraderMetrics Trader::metrics() const {
     return TraderMetrics{
         .orders_per_second = static_cast<double>(orders_submitted_.load()),
-        .pnl      = portfolio_.unrealized_pnl(0),
+        .pnl      = 0,
         .position = portfolio_.position()
     };
 }
