@@ -64,6 +64,76 @@ trading_engine (binary)
 
 **Prices** are `uint64_t` fixed-point: `10000 = $1.00` (e.g. $64,200 → `642000000`).
 
+## Technical Design
+
+### Matching Engine
+
+The `OrderMatcher` runs on a single dedicated worker thread and processes all order operations through a **moodycamel `ConcurrentQueue<Command>`** — a lock-free MPSC queue. Submits and cancels are wrapped in a `std::variant<SubmitCmd, CancelCmd>` and enqueued from any thread; the worker drains them in a tight `bulk_dequeue` loop. This design means all book mutations happen on one thread with no locks, which is why raw submit throughput hits 17M/s.
+
+Order processing flow:
+1. Enqueue timestamp (`submit_tp`) is captured at dequeue time and passed through to `OrderAcceptedEvent` for latency measurement.
+2. Limit orders call `try_match_limit`, which walks the opposite side of the book filling against resting levels until the order is exhausted, a price-level mismatch stops it, or TIF rules (IOC/FOK) force a cancel.
+3. Market orders walk the book with no price constraint.
+4. Stop orders sit in `pending_stop_limits_` / `pending_stop_markets_` maps and are triggered by `check_stop_orders` after every fill.
+5. Self-match prevention: if maker and taker share the same `TraderId`, the fill is skipped.
+6. Partial fills are tracked per order in `filled_qty_` (`unordered_map<OrderId, Quantity>`).
+
+### Order Book
+
+The book uses two **`boost::container::flat_map<Price, PriceLevel>`** — one for bids, one for asks. `flat_map` stores its key-value pairs in a contiguous sorted array rather than a tree, giving O(log n) lookups with much better cache behavior than `std::map`. Both sides are stored ascending; bids are walked `rbegin→rend` (highest first), asks `begin→end` (lowest first).
+
+Each `PriceLevel` holds a `total_qty` and a `std::list<OrderId>` for FIFO ordering within the level. A separate `unordered_map<OrderId, LimitOrder>` stores the full order structs for O(1) lookup by ID.
+
+Concurrent access uses a **`shared_mutex`**: readers (TUI snapshot, informed traders checking best bid/ask) take shared locks; the matcher worker takes exclusive locks only during mutations. The `snapshot()` method copies bid/ask levels under the lock and returns a plain `vector<pair<Price, Quantity>>` so the TUI never holds the book lock while rendering.
+
+### EventBus
+
+A header-only type-erased pub/sub system. Subscriptions are registered as `std::function<void(const EventType&)>` and stored in an `unordered_map<std::type_index, vector<Handler>>`. On publish, the event is wrapped in `std::any` and dispatched to all handlers for that type via a **shared lock** — multiple publishers can fire simultaneously without blocking each other; only subscription/unsubscription takes an exclusive lock. Each subscription returns a `SubscriptionToken` (monotonic `uint64_t`) for cleanup.
+
+Events in the system:
+- `FillEvent` — emitted after every match; carries the full `Fill` struct including `taker_side` for correct portfolio attribution
+- `BookUpdateEvent` — emitted after any book mutation; triggers TUI re-render
+- `OrderAcceptedEvent` — carries `submit_tp` for latency tracking by `StatsTracker`
+- `OrderRejectedEvent`, `OrderCancelledEvent`
+
+### Latent Price (GBM)
+
+`LatentPrice` models a theoretical fair value using **zero-drift Geometric Brownian Motion**. Each tick advances the log-price by `σ · Z` where Z ~ N(0,1):
+
+```
+log_price += σ * Z
+price = exp(log_price) * 10000   // back to fixed-point
+```
+
+The current price is stored in a **`std::atomic<Price>`** so any trader thread can call `get()` with acquire semantics and no lock. `sigma` defaults to 0.0003 (~0.03% per tick), controllable at runtime via `/vol`.
+
+### Automated Traders
+
+All three types extend `Trader` and are driven by `TraderRegistry`, which runs a configurable tick loop (default 200ms) on its own thread. Each tick calls `latent_.tick()` to advance the GBM, then dispatches to each active trader via `submit` and `cancel` lambdas that enqueue to the matcher.
+
+**MarketMaker** — quotes a bid and ask symmetrically around the GBM price, cancelling and requoting every tick. Tracks fill rate over a 20-tick sliding window; when fill rate exceeds 30% (a signal that informed traders are picking it off), it widens the half-spread by up to 3× using the formula `multiplier = min(1 + fill_rate * 2, 3.0)`. This is the Glosten-Milgrom insight: a rational market maker widens quotes when adverse selection risk is high. The effective spread persists across window resets so there's no instantaneous snap-back.
+
+**InformedTrader** — models a trader with a noisy signal about true value. Each tick it draws a signal: `signal = latent * (1 + N(0, signal_σ))`. If the signal deviates from the last trade price by more than a threshold (default 0.2%), it submits an IOC limit at the signal price. IOC means it either fills immediately or cancels — no resting orders, just directional pressure that drives price discovery.
+
+**NoiseTrader** — pure uninformed flow. Order arrivals are Poisson-distributed (`λ = 0.7` per tick, so ~70% chance of an order each tick). Side is 50/50. Size is log-normally distributed (mean ~2 units). Order type is 60% limit (placed near mid) / 40% market. Provides the background liquidity and noise that makes the simulation realistic.
+
+### Portfolio & PnL
+
+Each portfolio tracks `balance`, `position`, `total_cost`, and `total_bought` (the latter two for avg cost). On every fill, `apply_fill` is called with the correct side derived from `Fill::taker_side` — takers get `taker_side`, makers get the opposite.
+
+PnL is computed as:
+- **Unrealized** = `position × (current_price − avg_cost)`
+- **Realized** = `balance − starting_balance + position × avg_cost` (cash flow since start, net of open position at cost — removes the unrealized component)
+- **Total** = `balance − starting_balance + position × current_price` (mark-to-market)
+
+### StatsTracker
+
+Subscribes to `OrderAcceptedEvent` and maintains a **rolling 5-second deque** of `(timestamp, latency_µs)` records. `snapshot()` filters to the window, sorts latencies, and returns p50/p99 and orders/sec. Latency is measured from `submit_tp` (captured when the command is dequeued by the matcher worker) to when the `OrderAcceptedEvent` is published — so it reflects queue drain time plus book insertion, not roundtrip to the caller.
+
+### Fixed-Point Arithmetic
+
+All prices are `uint64_t` with an implicit scale of **10,000 units = $1.00**. This avoids floating-point rounding in financial calculations. Example: $64,200.50 → `642,005,000`. The TUI and order parser convert to/from `double` only at the user boundary.
+
 ## Requirements
 
 - C++20 compiler (GCC 12+ or Clang 14+)
