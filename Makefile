@@ -1,34 +1,21 @@
-.PHONY: all build test cpp-test bench clean rebuild
-
-PYTHON := $(shell conda run -n talat which python3 2>/dev/null || which python3)
-BUILD_DIR := build
+.PHONY: all build rebuild test bench run clean
 
 all: build
 
 build:
-	@echo "Configuring..."
-	@cmake -B $(BUILD_DIR) -S . -DPython3_EXECUTABLE=$(PYTHON) -DCMAKE_BUILD_TYPE=Release
-	@echo "Building..."
-	@cmake --build $(BUILD_DIR)
-	@echo "Build complete. .so → backend/"
+	cmake -B build -S . && cmake --build build -- -j$(shell nproc)
 
-rebuild:
-	@rm -rf $(BUILD_DIR)
-	@$(MAKE) build
+rebuild: clean build
 
-test: build cpp-test
+test: build
+	./build/tests
 
-cpp-test:
-	@echo "Running C++ tests..."
-	@./$(BUILD_DIR)/tests
-	@echo "All C++ tests passed."
+bench: build
+	cmake --build build --target benchmarks -- -j$(shell nproc)
+	./build/benchmarks
 
-bench:
-	@echo "Building benchmarks..."
-	@cmake --build $(BUILD_DIR) --target benchmarks
-	@echo "Running benchmarks..."
-	@./$(BUILD_DIR)/benchmarks
+run: build
+	./build/trading_engine
 
 clean:
-	@rm -rf $(BUILD_DIR)
-	@echo "Cleaned."
+	rm -rf build/

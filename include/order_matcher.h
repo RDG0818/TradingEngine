@@ -5,6 +5,7 @@
 #include "event_bus.h"
 #include <concurrentqueue.h>
 #include <atomic>
+#include <chrono>
 #include <thread>
 #include <variant>
 #include <unordered_map>
@@ -29,11 +30,11 @@ private:
 
     void run_loop();
     void process_order(const Order& order);
-    void process_limit(const LimitOrder& order);
-    void process_market(const MarketOrder& order);
+    void process_limit(const LimitOrder& order, std::chrono::steady_clock::time_point dequeue_tp);
+    void process_market(const MarketOrder& order, std::chrono::steady_clock::time_point dequeue_tp);
     void process_stop_limit(const StopLimitOrder& order);
     void process_stop_market(const StopMarketOrder& order);
-    void try_match_limit(const LimitOrder& taker);
+    void try_match_limit(const LimitOrder& taker, std::chrono::steady_clock::time_point dequeue_tp);
     void check_stop_orders(Price last_trade_price);
 
     EventBus&                                    bus_;

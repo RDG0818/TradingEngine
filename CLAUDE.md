@@ -4,126 +4,92 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project: Talat
 
-A high-performance simulated trading exchange ("Talat" = market in Thai). C++ core matching engine with Python (pybind11) bindings, a FastAPI backend, and a React/TypeScript frontend. Single synthetic symbol (BTC, seeded from CoinGecko at startup).
+A high-performance simulated trading exchange ("Talat" = market in Thai). Pure C++20 matching engine with a terminal UI — designed as a systems/quant interview portfolio piece showcasing lock-free concurrency, market microstructure, and real-time rendering.
 
 ## Build & Run
 
-**Prerequisites:** C++20 compiler, CMake 3.12+, Boost 1.74+, Python 3.10, Conda
+**Prerequisites:** C++20 compiler, CMake 3.14+, Boost 1.74+
 
 ```bash
-# First-time setup
-git submodule update --init --recursive
-conda create -n talat python=3.10 && conda activate talat
-cd backend && pip install -r requirements.txt && cd ..
+# Build everything (fetches ftxui via CMake FetchContent on first run)
+make build
 
-# Build C++ core + Python bindings
-make build        # cmake + compile + copies .so to backend/
+# Run the TUI
+make run           # ./build/trading_engine
+make run -- --seed 50000   # seed at $50,000
 
-# Run backend (from repo root, with conda env active)
-cd backend && python3 -m uvicorn main:app --reload
+# Tests
+make test          # runs C++ test suite (48 tests, 12 suites)
+./build/tests      # same, directly
 
-# Run frontend
-cd frontend/trading_exchange_frontend && npm run dev
-```
-
-**Tests:**
-```bash
-make test              # runs both C++ tests and pytest
-./build/tests          # C++ tests only (38 tests, 14 suites)
-./build/benchmarks     # performance benchmarks (EXCLUDE_FROM_ALL)
+# Benchmarks (throughput, match latency, contention)
+make bench         # builds + runs ./build/benchmarks
 ```
 
 ## Architecture
 
 ### Data Flow
 ```
-React frontend (port 5173)
-    ↓ HTTP REST + WebSocket /ws
-FastAPI backend (Python, backend/main.py)
-    ↓ pybind11 (.so module)
-C++ Exchange
-    ├── OrderMatcher    (worker thread, moodycamel lock-free queue)
-    ├── OrderBook       (boost::container::flat_map, bid/ask levels)
-    ├── TraderRegistry  (tick thread, 8 trader types)
-    └── EventBus        (type-safe pub/sub, shared_mutex)
+./build/trading_engine (C++ binary)
+    ├── Exchange
+    │     ├── OrderMatcher    (worker thread, moodycamel lock-free queue)
+    │     ├── OrderBook       (boost::container::flat_map, bid/ask levels)
+    │     ├── TraderRegistry  (tick thread, 3 trader types, owns LatentPrice)
+    │     └── EventBus        (type-safe pub/sub, shared_mutex)
+    └── TUI (ftxui, fullscreen terminal)
+          ├── Order Book panel  (depth bars, 6 bid/ask levels)
+          ├── Recent Fills panel (user fills highlighted)
+          ├── Stats panel       (p50/p99 latency, throughput, book depth)
+          └── Command bar       (order entry + slash commands)
 ```
 
 ### C++ Core (`src/`, `include/`)
 
-- **Exchange** — top-level orchestrator, the only class exposed to Python via pybind11 (`src/python_bindings.cpp`). Owns `OrderMatcher`, `TraderRegistry`, `EventBus`, and user `Portfolio` map. Python callback hooks: `on_fill_callback`, `on_book_update_callback`.
+- **Exchange** (`include/exchange.h`) — top-level orchestrator. Owns `OrderMatcher`, `TraderRegistry`, `EventBus`, and user `Portfolio` map. Key methods: `start(seed_price)`, `stop()`, `submit_order()`, `cancel_order()`, `book_snapshot()`, `portfolio_snapshot()`, `registry()`.
 - **OrderMatcher** — processes orders on a dedicated worker thread using moodycamel `ConcurrentQueue<Command>`. Handles all four order types (Limit, Market, StopLimit, StopMarket) with GTC/IOC/FOK time-in-force. Self-match prevention. Stop orders triggered by last trade price.
 - **OrderBook** — `boost::container::flat_map<Price, PriceLevel>` for cache-friendly sorted levels. `shared_mutex` for concurrent reads. Snapshot-before-callback pattern in walk methods to prevent deadlocks.
 - **EventBus** — type-safe pub/sub using `std::type_index` + `std::any`. `shared_mutex` for concurrent publish. Subscription tokens for cleanup. Events: `FillEvent`, `BookUpdateEvent`, `OrderAcceptedEvent`, `OrderRejectedEvent`, `OrderCancelledEvent`.
-- **TraderRegistry** — 8 trader types on a 10ms tick thread. Handles fill notifications, portfolio updates, and market event spawning.
+- **TraderRegistry** (`include/trader_registry.h`) — owns `LatentPrice`, runs 3 trader types on a configurable tick thread (default 200ms). Methods: `add_market_maker/informed_trader/noise_trader`, `pause_all/resume_all`, `set_market_maker_count/informed_count/noise_count`, `set_sigma`, `set_market_maker_spread`, `set_tick_interval_ms`.
+- **LatentPrice** (`include/latent_price.h`) — header-only GBM fair value. Zero-drift, configurable σ (default 0.0003). `std::atomic<Price>` for thread-safe reads. `tick()` advances one GBM step.
 - **Portfolio** — per-trader balance, position, avg cost, unrealized PnL. Thread-safe with `std::mutex`.
-- **Order types** — immutable `std::variant<LimitOrder, MarketOrder, StopLimitOrder, StopMarketOrder>`. Fills recorded in separate `Fill` structs (audit trail, not mutation).
-- **Prices** — `uint64_t` fixed-point where 10000 = $1.00 (e.g. $64,200 = 642,000,000). Timestamps use `std::chrono::nanoseconds`.
+- **StatsTracker** (`include/stats_tracker.h`) — header-only rolling 5-second window. Subscribes to `OrderAcceptedEvent`. `snapshot()` returns p50/p99 latency (µs) and orders/sec.
 
 ### Trader Types (`include/traders/`)
 
 | Trader | Behavior |
 |--------|----------|
-| `MarketMakerTrader` | GBM price walk, quotes bid+ask each tick with fixed half-spread |
-| `MomentumTrader` | 10-tick lookback, buys/sells on 0.5% momentum signal |
-| `MeanReversionTrader` | 20-tick SMA, trades 2% deviation from mean |
-| `TWAPTrader` | Splits large order into equal market-order slices over N ticks |
-| `TrendFollowerTrader` | Dual MA crossover (5/20 tick), flips position on signal |
-| `RandomLimitTrader` | Poisson arrival, normal price offset from last trade |
-| `RandomMarketTrader` | Poisson arrival, random side market orders |
-| `PanicTrader` | Spawned by market events only; aggressively dumps fixed qty then goes dormant |
+| `MarketMaker` | Quotes bid+ask ± latent price each tick. Tracks fill rate over 20-tick window; widens spread up to 3× when fill_rate > 30% (Glosten-Milgrom adverse selection). Cancels and requotes on every tick. |
+| `InformedTrader` | Noisy signal = latent × (1 + N(0, σ)). Submits IOC limit at signal price when signal diverges from last_price by more than threshold (default 0.2%). Drives price discovery. |
+| `NoiseTrader` | Poisson arrivals (λ=0.7 default). 60% limit / 40% market split. Log-normal sizes. Random side. Provides uninformed liquidity. |
 
-### Market Events (`include/market_events.h`)
+### TUI (`include/tui/tui.h`, `src/tui/tui.cpp`)
 
-Triggered via `Exchange::trigger_event()` or the API. Each spawns/modifies traders for `duration_ticks`:
-- `FlashCrash` — suspends market makers, spawns 4 panic sellers
-- `BullRun` — spawns 3 aggressive buyers
-- `LiquiditySqueeze` — suspends all random limit traders
-- `MeanReversionTrap` — spawns 2 aggressive buyers (momentum spike)
+Built with ftxui v5.0.0 (fetched via CMake FetchContent). Three panels:
+- **Order Book** — 6 bid/6 ask levels with ASCII depth bars. User's resting prices highlighted.
+- **Recent Fills** — last 20 trades. User fills highlighted in bold.
+- **Stats** — live p50/p99 latency, throughput, book depth, user position.
 
-### Python Bindings (`src/python_bindings.cpp`)
+Command bar at the bottom. Commands:
+- `buy <qty> @ <price>` — limit buy (GTC)
+- `sell <qty> @ <price>` — limit sell (GTC)
+- `buy <qty>` / `sell <qty>` — market order (IOC)
+- `cancel <order_id>` — cancel resting order
+- `q` / `quit` — exit
 
-Exposes enums (`Side`, `TimeInForce`, `MarketEventType`), structs (`BookSnapshot`, `Fill`, `SystemMetrics`, `PortfolioSnapshot`, `TraderMetrics`, `TraderInfo`, `MarketEventInfo`), and the full `Exchange` class. The compiled `.so` is output to `backend/`.
+Slash commands:
+- `/vol <0-1>` — set GBM volatility σ
+- `/spread <dollars>` — set market maker half-spread in dollars
+- `/speed <1-10>` — set tick speed (1=slow/2s, 10=fast/200ms)
+- `/pause` / `/resume` — pause/resume all automated traders
+- `/traders <mm|informed|noise> <n>` — set trader count for each type
+- `/help` — show command reference
 
-Key methods on `Exchange`:
-- `start(seed_price)` / `stop()` / `is_running()`
-- `submit_limit_order(trader_id, is_buy, price, qty, tif="GTC")` → `order_id`
-- `submit_market_order(trader_id, is_buy, qty)` → `order_id`
-- `cancel_order(order_id)`
-- `book_snapshot()` → `BookSnapshot`
-- `recent_trades(limit=50)` → `[Fill]`
-- `metrics()` → `SystemMetrics`
-- `create_portfolio(balance)` → `trader_id`
-- `portfolio_snapshot(trader_id)` → `PortfolioSnapshot`
-- `add_market_maker(name, balance, seed_price)` → `trader_id`
-- `add_momentum_trader / add_mean_reversion_trader / add_twap_trader / add_trend_follower / add_random_limit_trader / add_random_market_trader`
-- `start_trader(id)` / `stop_trader(id)` / `remove_trader(id)`
-- `trigger_event(MarketEventType, duration_ticks=30)`
-- `on_fill_callback(fn)` / `on_book_update_callback(fn)` — Python callbacks called with GIL
+### Prices
 
-### Backend (`backend/main.py`)
+`uint64_t` fixed-point where `10000 = $1.00` (e.g. $64,200 = 642,000,000).
 
-FastAPI app wrapping `Exchange` as a singleton. Seeded with live BTC price from CoinGecko at startup. Key endpoint groups:
-- `POST/GET /engine/*` — start/stop/status
-- `GET /metrics`, `/book_snapshot`, `/recent_trades`
-- `GET|POST|PUT|DELETE /traders` — automated trader CRUD + toggle
-- `POST /events/trigger` — trigger a market event
-- `GET /portfolio/{trader_id}`, `POST /portfolio/reset`
-- `WS /ws` — pushes `book_update` and `trade` messages
+### Include Path Convention
 
-### Frontend (`frontend/trading_exchange_frontend/`)
-
-React 19 + TypeScript + Vite + Tailwind (dark mode) + Recharts. WIP — being redesigned. Target layout: book-dominant (order book center), observe-first, single BTC symbol.
-
-## Include Path Convention
-
-Two CMake targets with different roots — important when adding files:
-- `core_lib` / `trading_engine_py` have `${PROJECT_SOURCE_DIR}/include` in their include path → source files in `src/` and `include/` use `#include "order.h"`, `#include "traders/momentum.h"` etc.
-- `tests` target has `${PROJECT_SOURCE_DIR}` (repo root) → test files use `#include "include/order.h"`, `#include "include/traders/momentum.h"` etc.
-
-## TODO
-
-- Backend (`backend/main.py`) needs to be rewritten for the new `Exchange` API — currently uses the old `TradingSystem` interface.
-- Frontend rewrite pending (wireframe designed, Figma/Stitch mockup to follow).
-- WebSocket `/ws` endpoint not yet implemented in backend.
-- `orders_processed` in `SystemMetrics` only counts orders submitted via `Exchange::submit_order()`, not trader-registry-submitted orders.
-- No authentication system.
+Two CMake targets with different roots:
+- `core_lib` / `trading_engine` have `${PROJECT_SOURCE_DIR}/include` in their include path → source files use `#include "order.h"`, `#include "traders/market_maker.h"` etc.
+- `tests` target has `${PROJECT_SOURCE_DIR}` (repo root) → test files use `#include "include/order.h"`, `#include "include/traders/market_maker.h"` etc.

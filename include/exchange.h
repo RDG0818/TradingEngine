@@ -6,11 +6,9 @@
 #include "event_bus.h"
 #include "trader_registry.h"
 #include "portfolio.h"
-#include "market_events.h"
 #include "exchange_events.h"
 #include <atomic>
 #include <deque>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -25,14 +23,13 @@ struct SystemMetrics {
 };
 
 struct PortfolioSnapshot {
-    uint64_t balance;
-    int64_t  position;
-    int64_t  unrealized_pnl;
-    Price    avg_cost;
+    uint64_t balance{0};
+    int64_t  position{0};
+    int64_t  unrealized_pnl{0};
+    int64_t  realized_pnl{0};
+    int64_t  total_pnl{0};
+    Price    avg_cost{0};
 };
-
-using FillCallback       = std::function<void(const Fill&)>;
-using BookUpdateCallback = std::function<void(const BookSnapshot&)>;
 
 class Exchange {
 public:
@@ -57,21 +54,13 @@ public:
     SystemMetrics     metrics() const;
 
     // Trader management (delegates to TraderRegistry).
-    template<typename T, typename... Args>
-    TraderId add_trader(std::string name, Args&&... args) {
-        return registry_.add_trader<T>(std::move(name), std::forward<Args>(args)...);
-    }
-    void remove_trader(TraderId id)  { registry_.remove_trader(id); }
-    void start_trader(TraderId id)   { registry_.start_trader(id); }
-    void stop_trader(TraderId id)    { registry_.stop_trader(id); }
-    void trigger_event(MarketEventType type, int duration_ticks = 30) {
-        registry_.trigger_event(type, duration_ticks);
-    }
-    std::vector<TraderInfo> all_traders() const { return registry_.all_traders(); }
-
-    // Python callback hooks.
-    void on_fill_callback(FillCallback cb);
-    void on_book_update_callback(BookUpdateCallback cb);
+    TraderId add_market_maker(std::string name, uint64_t balance)  { return registry_.add_market_maker(std::move(name), balance); }
+    TraderId add_informed_trader(std::string name, uint64_t balance) { return registry_.add_informed_trader(std::move(name), balance); }
+    TraderId add_noise_trader(std::string name, uint64_t balance, double lambda = 0.7) { return registry_.add_noise_trader(std::move(name), balance, lambda); }
+    void remove_trader(TraderId id) { registry_.remove_trader(id); }
+    void pause_traders()  { registry_.pause_all(); }
+    void resume_traders() { registry_.resume_all(); }
+    TraderRegistry& registry() { return registry_; }
 
     EventBus& event_bus() { return bus_; }
 
@@ -94,8 +83,4 @@ private:
     std::atomic<uint64_t> orders_processed_{0};
     Price                 last_trade_price_{0};
     Price                 seed_price_{0};
-
-    FillCallback       fill_cb_;
-    BookUpdateCallback book_update_cb_;
-    std::mutex         cb_mutex_;
 };

@@ -1,77 +1,72 @@
 // include/trader_registry.h
 #pragma once
-#include "trader.h"
-#include "order_matcher.h"
-#include "traders/random_market.h"
-#include "traders/random_limit.h"
-#include "traders/market_maker.h"
-#include "traders/momentum.h"
-#include "traders/mean_reversion.h"
-#include "traders/twap.h"
-#include "traders/trend_follower.h"
-#include "traders/panic.h"
-#include "market_events.h"
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <optional>
-#include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
-
-struct TraderInfo {
-    TraderId    id;
-    std::string name;
-    std::string type;
-    bool        active;
-    TraderMetrics metrics;
-};
+#include "event_bus.h"
+#include "latent_price.h"
+#include "order_matcher.h"
+#include "trader.h"
+#include "traders/market_maker.h"
+#include "traders/informed_trader.h"
+#include "traders/noise_trader.h"
 
 class TraderRegistry {
 public:
-    explicit TraderRegistry(OrderMatcher& matcher);
+    TraderRegistry(OrderMatcher& matcher, EventBus& bus,
+                   Price seed_price, double sigma = 0.0003);
     ~TraderRegistry();
 
-    void start();  // begin tick loop
+    void start();
     void stop();
 
-    // Create a trader and return its id. Not started until start_trader() is called.
-    template<typename T, typename... Args>
-    TraderId add_trader(std::string name, Args&&... args) {
-        TraderId id = next_trader_id_.fetch_add(1);
-        std::unique_lock lock(mutex_);
-        traders_.emplace(id, std::make_unique<T>(id, std::move(name), std::forward<Args>(args)...));
-        active_traders_.emplace(id, false);
-        type_names_.emplace(id, typeid(T).name());
-        return id;
-    }
+    TraderId add_market_maker(std::string name, uint64_t balance);
+    TraderId add_informed_trader(std::string name, uint64_t balance);
+    TraderId add_noise_trader(std::string name, uint64_t balance, double lambda = 0.7);
 
     void remove_trader(TraderId id);
-    void start_trader(TraderId id);
-    void stop_trader(TraderId id);
 
-    void trigger_event(MarketEventType type, int duration_ticks = 30);
+    void pause_all();
+    void resume_all();
 
-    std::optional<TraderInfo>  trader_info(TraderId id) const;
-    std::vector<TraderInfo>    all_traders() const;
+    void set_market_maker_count(size_t n, uint64_t balance = 1000000000);
+    void set_informed_count(size_t n, uint64_t balance = 1000000000);
+    void set_noise_count(size_t n, uint64_t balance = 1000000000);
 
-    // Subscribe to fills so traders can update their portfolios.
-    void subscribe_to_fills(EventBus& bus);
+    void set_sigma(double sigma) { latent_.set_sigma(sigma); }
+    void set_market_maker_spread(Price half_spread);
+    void set_tick_interval_ms(int ms);
+
+    void reset_latent(Price seed_price) { latent_.reinit(seed_price, latent_.sigma()); }
+
+    LatentPrice& latent_price() { return latent_; }
+    const LatentPrice& latent_price() const { return latent_; }
 
 private:
     void tick_loop();
-    Price last_price_{0};
+    void subscribe_to_fills();
 
-    OrderMatcher&                                         matcher_;
-    std::unordered_map<TraderId, std::unique_ptr<Trader>> traders_;
-    std::unordered_map<TraderId, bool>                    active_traders_;
-    std::unordered_map<TraderId, std::string>             type_names_;
-    mutable std::mutex                                    mutex_;
-    std::atomic<bool>                                     running_{false};
-    std::thread                                           tick_thread_;
-    std::atomic<TraderId>                                 next_trader_id_{1000};
+    OrderMatcher& matcher_;
+    EventBus& bus_;
+    LatentPrice latent_;
 
-    // Track panic traders spawned by events for cleanup.
-    std::vector<TraderId> event_traders_;
+    struct TraderEntry {
+        std::unique_ptr<Trader> trader;
+        bool active;
+        std::string type;
+    };
+
+    std::unordered_map<TraderId, TraderEntry> traders_;
+    std::vector<SubscriptionToken> fill_tokens_;
+
+    std::thread tick_thread_;
+    std::atomic<bool> running_{false};
+    std::atomic<bool> paused_{false};
+    std::atomic<int> tick_interval_ms_{200};
+
+    mutable std::mutex mutex_;
+    std::atomic<TraderId> next_id_{2000};
 };

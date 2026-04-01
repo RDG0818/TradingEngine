@@ -62,6 +62,7 @@ struct Fill {
     Price     fill_price;
     Quantity  fill_qty;
     Timestamp ts;
+    Side      taker_side;  // Buy = aggressor bought; Sell = aggressor sold
 };
 
 inline OrderId   get_order_id (const Order& o) { return std::visit([](const auto& x){ return x.id;        }, o); }

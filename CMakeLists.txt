@@ -1,63 +1,96 @@
-cmake_minimum_required(VERSION 3.12)
-project(TradingEngine VERSION 2.0)
+cmake_minimum_required(VERSION 3.14)
+project(TradingEngine VERSION 3.0)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_BUILD_TYPE Release)
 
-if(CMAKE_BUILD_TYPE MATCHES "Release")
-    add_compile_options(-march=native)
-endif()
-
+# Dependencies
 find_package(Boost REQUIRED)
 
+# GoogleTest
+add_subdirectory(googletest EXCLUDE_FROM_ALL)
+
+# Google Benchmark
+set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+add_subdirectory(benchmark EXCLUDE_FROM_ALL)
+
+# ftxui (TUI library)
+include(FetchContent)
+FetchContent_Declare(
+    ftxui
+    GIT_REPOSITORY https://github.com/ArthurSonzogni/FTXUI
+    GIT_TAG        v5.0.0
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(ftxui)
+
+# Core C++ library (no Python, no TUI)
+# NOTE: new trader sources (informed_trader, noise_trader) and tui sources
+# are added in later tasks. Only currently-existing sources are listed here.
 set(CORE_SOURCES
     src/event_bus.cpp
+    src/exchange.cpp
     src/order_book.cpp
     src/order_matcher.cpp
     src/portfolio.cpp
-    src/trader_registry.cpp
-    src/market_events.cpp
-    src/exchange.cpp
     src/trader.cpp
+    src/trader_registry.cpp
     src/traders/market_maker.cpp
-    src/traders/momentum.cpp
-    src/traders/mean_reversion.cpp
-    src/traders/twap.cpp
-    src/traders/trend_follower.cpp
-    src/traders/random_limit.cpp
-    src/traders/random_market.cpp
-    src/traders/panic.cpp
+    src/traders/informed_trader.cpp
+    src/traders/noise_trader.cpp
 )
 
 add_library(core_lib STATIC ${CORE_SOURCES})
-set_target_properties(core_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(core_lib PUBLIC
     ${PROJECT_SOURCE_DIR}/include
     ${PROJECT_SOURCE_DIR}/third_party/moodycamel
     ${Boost_INCLUDE_DIRS}
 )
+target_link_libraries(core_lib PUBLIC Boost::boost)
+set_target_properties(core_lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-add_subdirectory(googletest)
-add_subdirectory(benchmark)
-enable_testing()
+# TUI binary
+add_executable(trading_engine
+    src/main.cpp
+    src/tui/tui.cpp
+)
+target_include_directories(trading_engine PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${Boost_INCLUDE_DIRS}
+)
+target_link_libraries(trading_engine PRIVATE
+    core_lib
+    ftxui::screen
+    ftxui::dom
+    ftxui::component
+)
 
-file(GLOB CPP_TEST_SOURCES "tests/cpp/*.cpp")
-list(REMOVE_ITEM CPP_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/performanceTest.cpp")
+# Tests
+file(GLOB TEST_SOURCES "tests/cpp/*.cpp")
+list(FILTER TEST_SOURCES EXCLUDE REGEX "performanceTest.cpp")
+add_executable(tests ${TEST_SOURCES})
+target_include_directories(tests PRIVATE
+    ${PROJECT_SOURCE_DIR}
+    ${Boost_INCLUDE_DIRS}
+)
+target_link_libraries(tests PRIVATE
+    GTest::gtest_main
+    Boost::boost
+    core_lib
+)
+include(GoogleTest)
+gtest_discover_tests(tests)
 
-add_executable(tests ${CPP_TEST_SOURCES})
-target_link_libraries(tests GTest::gtest_main Boost::boost core_lib)
-target_include_directories(tests PUBLIC ${PROJECT_SOURCE_DIR})
-
+# Benchmarks (not built by default)
 add_executable(benchmarks EXCLUDE_FROM_ALL tests/cpp/performanceTest.cpp)
-target_link_libraries(benchmarks benchmark::benchmark Boost::boost core_lib)
-target_include_directories(benchmarks PUBLIC ${PROJECT_SOURCE_DIR})
-
-find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
-add_subdirectory(pybind11)
-pybind11_add_module(trading_engine_py src/python_bindings.cpp)
-target_link_libraries(trading_engine_py PRIVATE core_lib Boost::boost)
-set_target_properties(trading_engine_py PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/backend
+target_include_directories(benchmarks PRIVATE
+    ${PROJECT_SOURCE_DIR}
+    ${Boost_INCLUDE_DIRS}
+)
+target_link_libraries(benchmarks PRIVATE
+    benchmark::benchmark
+    Boost::boost
+    core_lib
 )

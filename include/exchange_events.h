@@ -1,5 +1,6 @@
 // include/exchange_events.h
 #pragma once
+#include <chrono>
 #include "order.h"
 #include "order_book.h"
 
@@ -17,6 +18,7 @@ struct BookUpdateEvent {
 struct OrderAcceptedEvent {
     OrderId order_id;
     TraderId trader_id;
+    std::chrono::steady_clock::time_point submit_tp;  // wall clock at dequeue time
 };
 
 // Published when an order is rejected.

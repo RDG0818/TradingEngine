@@ -1,141 +1,164 @@
 // src/trader_registry.cpp
 #include "trader_registry.h"
 #include "exchange_events.h"
-#include <chrono>
-#include <algorithm>
 
-TraderRegistry::TraderRegistry(OrderMatcher& matcher) : matcher_(matcher) {}
+TraderRegistry::TraderRegistry(OrderMatcher& matcher, EventBus& bus,
+                               Price seed_price, double sigma)
+    : matcher_(matcher)
+    , bus_(bus)
+    , latent_(seed_price, sigma)
+{}
 
-TraderRegistry::~TraderRegistry() { stop(); }
+TraderRegistry::~TraderRegistry() {
+    stop();
+    for (auto token : fill_tokens_) bus_.unsubscribe(token);
+}
 
 void TraderRegistry::start() {
-    running_ = true;
+    subscribe_to_fills();
+    running_.store(true);
     tick_thread_ = std::thread(&TraderRegistry::tick_loop, this);
 }
 
 void TraderRegistry::stop() {
-    if (running_.exchange(false) && tick_thread_.joinable())
-        tick_thread_.join();
+    running_.store(false);
+    if (tick_thread_.joinable()) tick_thread_.join();
+}
+
+void TraderRegistry::subscribe_to_fills() {
+    fill_tokens_.push_back(bus_.subscribe<FillEvent>([this](const FillEvent& e) {
+        std::unique_lock lock(mutex_);
+        for (auto& [id, entry] : traders_) {
+            entry.trader->on_fill(e.fill);
+        }
+    }));
+}
+
+void TraderRegistry::tick_loop() {
+    while (running_.load()) {
+        latent_.tick();
+
+        if (!paused_.load()) {
+            Price last_price = latent_.get();
+
+            auto submit_fn = [this](Order order) {
+                matcher_.submit(std::move(order));
+            };
+            auto cancel_fn = [this](OrderId id) -> bool {
+                matcher_.cancel(id);
+                return true;
+            };
+
+            std::unique_lock lock(mutex_);
+            for (auto& [id, entry] : traders_) {
+                if (entry.active) {
+                    entry.trader->tick(last_price, submit_fn, cancel_fn);
+                }
+            }
+        }
+
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(tick_interval_ms_.load()));
+    }
+}
+
+TraderId TraderRegistry::add_market_maker(std::string name, uint64_t balance) {
+    TraderId id = next_id_.fetch_add(1);
+    std::unique_lock lock(mutex_);
+    auto mm = std::make_unique<MarketMaker>(id, std::move(name), balance, latent_);
+    traders_.emplace(id, TraderEntry{std::move(mm), true, "mm"});
+    return id;
+}
+
+TraderId TraderRegistry::add_informed_trader(std::string name, uint64_t balance) {
+    TraderId id = next_id_.fetch_add(1);
+    std::unique_lock lock(mutex_);
+    auto it = std::make_unique<InformedTrader>(id, std::move(name), balance, latent_);
+    traders_.emplace(id, TraderEntry{std::move(it), true, "informed"});
+    return id;
+}
+
+TraderId TraderRegistry::add_noise_trader(std::string name, uint64_t balance, double lambda) {
+    TraderId id = next_id_.fetch_add(1);
+    std::unique_lock lock(mutex_);
+    auto nt = std::make_unique<NoiseTrader>(id, std::move(name), balance, lambda);
+    traders_.emplace(id, TraderEntry{std::move(nt), true, "noise"});
+    return id;
 }
 
 void TraderRegistry::remove_trader(TraderId id) {
     std::unique_lock lock(mutex_);
     traders_.erase(id);
-    active_traders_.erase(id);
-    type_names_.erase(id);
 }
 
-void TraderRegistry::start_trader(TraderId id) {
-    std::unique_lock lock(mutex_);
-    if (active_traders_.count(id)) active_traders_[id] = true;
+void TraderRegistry::pause_all() {
+    paused_.store(true);
 }
 
-void TraderRegistry::stop_trader(TraderId id) {
-    std::unique_lock lock(mutex_);
-    if (active_traders_.count(id)) active_traders_[id] = false;
+void TraderRegistry::resume_all() {
+    paused_.store(false);
 }
 
-void TraderRegistry::tick_loop() {
-    using namespace std::chrono_literals;
-    while (running_) {
-        {
-            std::unique_lock lock(mutex_);
-            for (auto& [id, trader] : traders_) {
-                if (!active_traders_[id]) continue;
-                trader->tick(last_price_, [this](Order o) {
-                    matcher_.submit(std::move(o));
-                });
-            }
-            // Clean up expired panic traders.
-            for (auto it = event_traders_.begin(); it != event_traders_.end(); ) {
-                auto t_it = traders_.find(*it);
-                if (t_it == traders_.end()) { it = event_traders_.erase(it); continue; }
-                if (auto* pt = dynamic_cast<PanicTrader*>(t_it->second.get()); pt && pt->is_done()) {
-                    traders_.erase(t_it);
-                    active_traders_.erase(*it);
-                    it = event_traders_.erase(it);
-                } else ++it;
-            }
-        }
-        std::this_thread::sleep_for(10ms);
-    }
-}
-
-void TraderRegistry::subscribe_to_fills(EventBus& bus) {
-    bus.subscribe<FillEvent>([this](const FillEvent& e) {
+void TraderRegistry::set_market_maker_count(size_t n, uint64_t balance) {
+    std::vector<TraderId> mm_ids;
+    {
         std::unique_lock lock(mutex_);
-        last_price_ = e.fill.fill_price;
-        // Notify both maker and taker traders.
-        for (TraderId tid : {e.fill.maker_trader_id, e.fill.taker_trader_id}) {
-            auto it = traders_.find(tid);
-            if (it != traders_.end()) it->second->on_fill(e.fill);
+        for (auto& [id, entry] : traders_) {
+            if (entry.type == "mm") mm_ids.push_back(id);
         }
-    });
+    }
+    while (mm_ids.size() > n) {
+        remove_trader(mm_ids.back());
+        mm_ids.pop_back();
+    }
+    while (mm_ids.size() < n) {
+        mm_ids.push_back(add_market_maker("mm" + std::to_string(next_id_.load()), balance));
+    }
 }
 
-void TraderRegistry::trigger_event(MarketEventType type, int duration_ticks) {
-    std::unique_lock lock(mutex_);
-    switch (type) {
-        case MarketEventType::FlashCrash: {
-            // Suspend market makers temporarily, spawn panic sellers.
-            for (auto& [id, t_name] : type_names_)
-                if (t_name.find("MarketMaker") != std::string::npos)
-                    active_traders_[id] = false;
+void TraderRegistry::set_informed_count(size_t n, uint64_t balance) {
+    std::vector<TraderId> ids;
+    {
+        std::unique_lock lock(mutex_);
+        for (auto& [id, entry] : traders_) {
+            if (entry.type == "informed") ids.push_back(id);
+        }
+    }
+    while (ids.size() > n) {
+        remove_trader(ids.back());
+        ids.pop_back();
+    }
+    while (ids.size() < n) {
+        ids.push_back(add_informed_trader("inf" + std::to_string(next_id_.load()), balance));
+    }
+}
 
-            for (int i = 0; i < 4; ++i) {
-                TraderId pid = next_trader_id_.fetch_add(1);
-                auto pt = std::make_unique<PanicTrader>(pid, "panic_" + std::to_string(pid),
-                                                        5000000ULL, Side::Sell, 20, duration_ticks);
-                active_traders_[pid] = true;
-                event_traders_.push_back(pid);
-                traders_.emplace(pid, std::move(pt));
-            }
-            break;
+void TraderRegistry::set_noise_count(size_t n, uint64_t balance) {
+    std::vector<TraderId> ids;
+    {
+        std::unique_lock lock(mutex_);
+        for (auto& [id, entry] : traders_) {
+            if (entry.type == "noise") ids.push_back(id);
         }
-        case MarketEventType::BullRun: {
-            for (int i = 0; i < 3; ++i) {
-                TraderId pid = next_trader_id_.fetch_add(1);
-                auto pt = std::make_unique<PanicTrader>(pid, "bull_" + std::to_string(pid),
-                                                        5000000ULL, Side::Buy, 30, duration_ticks);
-                active_traders_[pid] = true;
-                event_traders_.push_back(pid);
-                traders_.emplace(pid, std::move(pt));
-            }
-            break;
-        }
-        case MarketEventType::LiquiditySqueeze: {
-            for (auto& [id, t_name] : type_names_)
-                if (t_name.find("RandomLimit") != std::string::npos)
-                    active_traders_[id] = false;
-            break;
-        }
-        case MarketEventType::MeanReversionTrap: {
-            for (int i = 0; i < 2; ++i) {
-                TraderId pid = next_trader_id_.fetch_add(1);
-                auto pt = std::make_unique<PanicTrader>(pid, "trap_" + std::to_string(pid),
-                                                        5000000ULL, Side::Buy, 50, duration_ticks);
-                active_traders_[pid] = true;
-                event_traders_.push_back(pid);
-                traders_.emplace(pid, std::move(pt));
-            }
-            break;
+    }
+    while (ids.size() > n) {
+        remove_trader(ids.back());
+        ids.pop_back();
+    }
+    while (ids.size() < n) {
+        ids.push_back(add_noise_trader("noise" + std::to_string(next_id_.load()), balance));
+    }
+}
+
+void TraderRegistry::set_market_maker_spread(Price half_spread) {
+    std::unique_lock lock(mutex_);
+    for (auto& [id, entry] : traders_) {
+        if (entry.type == "mm") {
+            static_cast<MarketMaker*>(entry.trader.get())->set_half_spread(half_spread);
         }
     }
 }
 
-std::optional<TraderInfo> TraderRegistry::trader_info(TraderId id) const {
-    std::unique_lock lock(mutex_);
-    auto it = traders_.find(id);
-    if (it == traders_.end()) return std::nullopt;
-    return TraderInfo{id, it->second->name(), type_names_.at(id),
-                      active_traders_.at(id), it->second->metrics()};
-}
-
-std::vector<TraderInfo> TraderRegistry::all_traders() const {
-    std::unique_lock lock(mutex_);
-    std::vector<TraderInfo> result;
-    for (const auto& [id, trader] : traders_)
-        result.push_back({id, trader->name(), type_names_.at(id),
-                          active_traders_.at(id), trader->metrics()});
-    return result;
+void TraderRegistry::set_tick_interval_ms(int ms) {
+    tick_interval_ms_.store(ms);
 }

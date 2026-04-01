@@ -3,7 +3,7 @@
 #include "exchange_events.h"
 
 Exchange::Exchange()
-    : matcher_(bus_), registry_(matcher_) {}
+    : matcher_(bus_), registry_(matcher_, bus_, 0) {}
 
 Exchange::~Exchange() { stop(); }
 
@@ -11,12 +11,9 @@ void Exchange::start(Price seed_price) {
     seed_price_       = seed_price;
     last_trade_price_ = seed_price;
 
+    registry_.reset_latent(seed_price);
+
     bus_.subscribe<FillEvent>([this](const FillEvent& e) { on_fill(e); });
-    bus_.subscribe<BookUpdateEvent>([this](const BookUpdateEvent& e) {
-        std::lock_guard lock(cb_mutex_);
-        if (book_update_cb_) book_update_cb_(e.snapshot);
-    });
-    registry_.subscribe_to_fills(bus_);
 
     matcher_.start();
     registry_.start();
@@ -43,7 +40,11 @@ PortfolioSnapshot Exchange::portfolio_snapshot(TraderId id) const {
     auto it = portfolios_.find(id);
     if (it == portfolios_.end()) return {};
     const Portfolio& p = it->second;
-    return {p.balance(), p.position(), p.unrealized_pnl(last_trade_price_), p.avg_cost()};
+    return {p.balance(), p.position(),
+            p.unrealized_pnl(last_trade_price_),
+            p.realized_pnl(),
+            p.total_pnl(last_trade_price_),
+            p.avg_cost()};
 }
 
 void Exchange::submit_order(Order order) {
@@ -79,9 +80,10 @@ void Exchange::on_fill(const FillEvent& e) {
         for (TraderId tid : {e.fill.maker_trader_id, e.fill.taker_trader_id}) {
             auto it = portfolios_.find(tid);
             if (it == portfolios_.end()) continue;
-            bool is_maker = (tid == e.fill.maker_trader_id);
-            it->second.apply_fill(is_maker ? Side::Sell : Side::Buy,
-                                  e.fill.fill_price, e.fill.fill_qty);
+            bool is_taker = (tid == e.fill.taker_trader_id);
+            Side side = is_taker ? e.fill.taker_side
+                                 : (e.fill.taker_side == Side::Buy ? Side::Sell : Side::Buy);
+            it->second.apply_fill(side, e.fill.fill_price, e.fill.fill_qty);
         }
     }
 
@@ -93,19 +95,4 @@ void Exchange::on_fill(const FillEvent& e) {
             recent_trades_.pop_front();
     }
 
-    // Fire fill callback.
-    {
-        std::lock_guard lock(cb_mutex_);
-        if (fill_cb_) fill_cb_(e.fill);
-    }
-}
-
-void Exchange::on_fill_callback(FillCallback cb) {
-    std::lock_guard lock(cb_mutex_);
-    fill_cb_ = std::move(cb);
-}
-
-void Exchange::on_book_update_callback(BookUpdateCallback cb) {
-    std::lock_guard lock(cb_mutex_);
-    book_update_cb_ = std::move(cb);
 }
