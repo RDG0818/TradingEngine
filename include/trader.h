@@ -34,6 +34,11 @@ public:
     const std::string& name()    const { return name_; }
     TraderMetrics      metrics() const;
 
+    // Public order ID allocator for external use (e.g. TUI user orders)
+    static OrderId alloc_order_id() {
+        return next_order_id_.fetch_add(1, std::memory_order_relaxed);
+    }
+
 protected:
     TraderId    id_;
     std::string name_;
