@@ -83,13 +83,15 @@ void TUI::on_fill(const Fill& fill) {
 }
 
 static Element render_header_impl(Price last_price, double ops_per_sec) {
-    std::string price_str = last_price ? fmt_price(last_price) : "---";
+    std::string price_str = last_price ? fmt_price(last_price) : "      ---";
     std::string ops_str = std::to_string(static_cast<int>(ops_per_sec)) + "/s";
     return hbox({
-        text(" TALAT ") | bold | bgcolor(Color::Blue),
-        text("  BTC $" + price_str),
+        text(" TALAT ") | bold | bgcolor(Color::NavyBlue) | color(Color::CyanLight),
+        text("  BTC ") | dim,
+        text("$" + price_str) | bold | color(Color::Yellow),
         filler(),
-        text("ops: " + ops_str + "  "),
+        text("orders: ") | dim,
+        text(ops_str + "  ") | color(Color::CyanLight),
     }) | border;
 }
 
@@ -138,7 +140,7 @@ void TUI::run() {
         }
 
         Elements book_rows;
-        book_rows.push_back(text("ORDER BOOK") | bold | center);
+        book_rows.push_back(text("ORDER BOOK") | bold | center | color(Color::Cyan));
         book_rows.push_back(separator());
 
         Quantity max_qty = 1;
@@ -154,28 +156,28 @@ void TUI::run() {
         std::reverse(asks_display.begin(), asks_display.end());
         for (const auto& [price, qty] : asks_display) {
             auto row = hbox({
-                depth_bar(qty, max_qty, Color::Red),
+                depth_bar(qty, max_qty, Color::RedLight),
                 text("  "),
-                text(fmt_price(price)) | color(Color::Red),
+                text(fmt_price(price)) | color(Color::RedLight),
                 text("  "),
-                text(fmt_qty(qty)),
+                text(fmt_qty(qty)) | color(Color::GrayLight),
             });
-            book_rows.push_back(my_asks.count(price) ? row | bgcolor(Color::GrayDark) : row);
+            book_rows.push_back(my_asks.count(price) ? row | bgcolor(Color::NavyBlue) : row);
         }
         book_rows.push_back(separator());
-        book_rows.push_back(text("  -- mid --") | dim | center);
+        book_rows.push_back(text("     -- mid --") | dim | color(Color::Yellow));
         book_rows.push_back(separator());
         size_t bid_count = 0;
         for (const auto& [price, qty] : snap.bids) {
             if (bid_count++ >= 6) break;
             auto row = hbox({
-                depth_bar(qty, max_qty, Color::Green),
+                depth_bar(qty, max_qty, Color::GreenLight),
                 text("  "),
-                text(fmt_price(price)) | color(Color::Green),
+                text(fmt_price(price)) | color(Color::GreenLight),
                 text("  "),
-                text(fmt_qty(qty)),
+                text(fmt_qty(qty)) | color(Color::GrayLight),
             });
-            book_rows.push_back(my_bids.count(price) ? row | bgcolor(Color::GrayDark) : row);
+            book_rows.push_back(my_bids.count(price) ? row | bgcolor(Color::NavyBlue) : row);
         }
 
         // --- fills ---
@@ -186,20 +188,20 @@ void TUI::run() {
             fills = recent_fills_;
         }
         Elements fill_rows;
-        fill_rows.push_back(text("RECENT FILLS") | bold | center);
+        fill_rows.push_back(text("RECENT FILLS") | bold | center | color(Color::Cyan));
         fill_rows.push_back(separator());
         for (const auto& f : fills) {
             bool user_fill = (f.taker_trader_id == uid || f.maker_trader_id == uid);
-            bool is_buy = (f.taker_trader_id != f.maker_trader_id);
-            Color c = is_buy ? Color::Green : Color::Red;
+            bool is_buy = (f.taker_side == Side::Buy);
+            Color c = is_buy ? Color::GreenLight : Color::RedLight;
             auto row = hbox({
                 text(fmt_price(f.fill_price)) | color(c),
                 text("  "),
-                text(fmt_qty(f.fill_qty)),
+                text(fmt_qty(f.fill_qty)) | color(Color::GrayLight),
                 text("  "),
-                text(is_buy ? " buy " : " sell") | color(c),
+                text(is_buy ? " BUY " : "SELL ") | color(c) | bold,
             });
-            fill_rows.push_back(user_fill ? row | bold | bgcolor(Color::GrayDark) : row);
+            fill_rows.push_back(user_fill ? row | bgcolor(Color::NavyBlue) : row);
         }
 
         // --- stats ---
@@ -209,26 +211,35 @@ void TUI::run() {
             status_msg = status_message_;
         }
         auto stat_row = [](const std::string& label, const std::string& val) {
-            return hbox({text(label) | dim, filler(), text(val) | bold});
+            return hbox({
+                text(label) | dim | color(Color::GrayLight),
+                filler(),
+                text(val) | bold | color(Color::Yellow),
+            });
         };
         Elements stat_rows;
-        stat_rows.push_back(text("STATS") | bold | center);
+        stat_rows.push_back(text("STATS") | bold | center | color(Color::Cyan));
         stat_rows.push_back(separator());
-        stat_rows.push_back(stat_row("p50 latency ", std::to_string(stats_snap.p50_us) + " us"));
-        stat_rows.push_back(stat_row("p99 latency ", std::to_string(stats_snap.p99_us) + " us"));
-        stat_rows.push_back(stat_row("throughput  ", std::to_string(static_cast<int>(stats_snap.orders_per_sec)) + "/s"));
+        stat_rows.push_back(stat_row("p50 latency", std::to_string(stats_snap.p50_us) + " us"));
+        stat_rows.push_back(stat_row("p99 latency", std::to_string(stats_snap.p99_us) + " us"));
+        stat_rows.push_back(stat_row("throughput ", std::to_string(static_cast<int>(stats_snap.orders_per_sec)) + "/s"));
         auto book_snap2 = exchange_.book_snapshot();
-        stat_rows.push_back(stat_row("book depth  ",
+        stat_rows.push_back(stat_row("book depth ",
             std::to_string(book_snap2.bids.size() + book_snap2.asks.size()) + " lvls"));
         if (uid != 0) {
             stat_rows.push_back(separator());
             auto portfolio = exchange_.portfolio_snapshot(uid);
-            stat_rows.push_back(stat_row("position",
-                (portfolio.position >= 0 ? "+" : "") + std::to_string(portfolio.position)));
+            int64_t pos = portfolio.position;
+            Color pos_color = pos > 0 ? Color::GreenLight : pos < 0 ? Color::RedLight : Color::GrayLight;
+            stat_rows.push_back(hbox({
+                text("position ") | dim | color(Color::GrayLight),
+                filler(),
+                text((pos >= 0 ? "+" : "") + std::to_string(pos)) | bold | color(pos_color),
+            }));
         }
         if (!status_msg.empty()) {
             stat_rows.push_back(separator());
-            stat_rows.push_back(paragraph(status_msg) | dim);
+            stat_rows.push_back(paragraph(status_msg) | color(Color::CyanLight));
         }
 
         return vbox({
@@ -238,7 +249,10 @@ void TUI::run() {
                 vbox(std::move(fill_rows)) | border | size(WIDTH, EQUAL, 32),
                 vbox(std::move(stat_rows)) | border | flex,
             }) | flex,
-            hbox({text(" > "), input_component->Render()}) | border,
+            hbox({
+                text(" ❯ ") | color(Color::Cyan) | bold,
+                input_component->Render(),
+            }) | border | bgcolor(Color::Black),
         });
     });
 

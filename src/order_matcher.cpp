@@ -84,7 +84,7 @@ void OrderMatcher::try_match_limit(const LimitOrder& taker, std::chrono::steady_
             Quantity fill_qty = std::min(remaining, maker_remaining);
 
             Fill fill{maker_id, taker.id, maker->trader_id, taker.trader_id,
-                      level_price, fill_qty, now};
+                      level_price, fill_qty, now, taker.side};
             bus_.publish(FillEvent{fill});
 
             filled_qty_[maker_id] += fill_qty;
