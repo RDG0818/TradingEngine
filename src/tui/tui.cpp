@@ -241,13 +241,31 @@ void TUI::run() {
         stat_rows.push_back(stat_row("book depth ",
             std::to_string(book_snap2.bids.size() + book_snap2.asks.size()) + " lvls"));
         if (uid != 0) {
-            stat_rows.push_back(separator());
             auto portfolio = exchange_.portfolio_snapshot(uid);
-            int64_t pos  = portfolio.position;
-            int64_t upnl = portfolio.unrealized_pnl;
-            Price   avg  = portfolio.avg_cost;
+            int64_t pos   = portfolio.position;
+            int64_t upnl  = portfolio.unrealized_pnl;
+            int64_t rpnl  = portfolio.realized_pnl;
+            int64_t tpnl  = portfolio.total_pnl;
+            Price   avg   = portfolio.avg_cost;
+
+            // --- prominent profit indicator ---
+            Color tpnl_color = tpnl > 0 ? Color::GreenLight : tpnl < 0 ? Color::RedLight : Color::GrayLight;
+            std::string arrow = tpnl > 0 ? " ▲ " : tpnl < 0 ? " ▼ " : " — ";
+            stat_rows.push_back(separator());
+            stat_rows.push_back(
+                hbox({
+                    text(arrow) | bold | color(tpnl_color),
+                    text(fmt_pnl(tpnl)) | bold | color(tpnl_color),
+                    filler(),
+                    text("TOTAL PnL") | dim | color(Color::GrayLight),
+                }) | bgcolor(tpnl != 0 ? Color::Black : Color::Black)
+            );
+
+            // --- breakdown ---
+            stat_rows.push_back(separator());
             Color pos_color  = pos  > 0 ? Color::GreenLight : pos  < 0 ? Color::RedLight : Color::GrayLight;
             Color upnl_color = upnl > 0 ? Color::GreenLight : upnl < 0 ? Color::RedLight : Color::GrayLight;
+            Color rpnl_color = rpnl > 0 ? Color::GreenLight : rpnl < 0 ? Color::RedLight : Color::GrayLight;
             stat_rows.push_back(hbox({text("position ") | dim | color(Color::GrayLight), filler(),
                 text((pos >= 0 ? "+" : "") + std::to_string(pos)) | bold | color(pos_color)}));
             if (avg > 0)
@@ -256,6 +274,9 @@ void TUI::run() {
             if (pos != 0)
                 stat_rows.push_back(hbox({text("unreal PnL") | dim | color(Color::GrayLight), filler(),
                     text(fmt_pnl(upnl)) | bold | color(upnl_color)}));
+            if (rpnl != 0)
+                stat_rows.push_back(hbox({text("real PnL ") | dim | color(Color::GrayLight), filler(),
+                    text(fmt_pnl(rpnl)) | bold | color(rpnl_color)}));
 
             // User trade history
             std::deque<Fill> my_fills;

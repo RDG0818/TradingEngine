@@ -23,10 +23,12 @@ struct SystemMetrics {
 };
 
 struct PortfolioSnapshot {
-    uint64_t balance;
-    int64_t  position;
-    int64_t  unrealized_pnl;
-    Price    avg_cost;
+    uint64_t balance{0};
+    int64_t  position{0};
+    int64_t  unrealized_pnl{0};
+    int64_t  realized_pnl{0};
+    int64_t  total_pnl{0};
+    Price    avg_cost{0};
 };
 
 class Exchange {

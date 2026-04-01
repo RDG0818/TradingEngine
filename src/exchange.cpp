@@ -40,7 +40,11 @@ PortfolioSnapshot Exchange::portfolio_snapshot(TraderId id) const {
     auto it = portfolios_.find(id);
     if (it == portfolios_.end()) return {};
     const Portfolio& p = it->second;
-    return {p.balance(), p.position(), p.unrealized_pnl(last_trade_price_), p.avg_cost()};
+    return {p.balance(), p.position(),
+            p.unrealized_pnl(last_trade_price_),
+            p.realized_pnl(),
+            p.total_pnl(last_trade_price_),
+            p.avg_cost()};
 }
 
 void Exchange::submit_order(Order order) {
@@ -76,9 +80,10 @@ void Exchange::on_fill(const FillEvent& e) {
         for (TraderId tid : {e.fill.maker_trader_id, e.fill.taker_trader_id}) {
             auto it = portfolios_.find(tid);
             if (it == portfolios_.end()) continue;
-            bool is_maker = (tid == e.fill.maker_trader_id);
-            it->second.apply_fill(is_maker ? Side::Sell : Side::Buy,
-                                  e.fill.fill_price, e.fill.fill_qty);
+            bool is_taker = (tid == e.fill.taker_trader_id);
+            Side side = is_taker ? e.fill.taker_side
+                                 : (e.fill.taker_side == Side::Buy ? Side::Sell : Side::Buy);
+            it->second.apply_fill(side, e.fill.fill_price, e.fill.fill_qty);
         }
     }
 

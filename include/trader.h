@@ -26,7 +26,13 @@ public:
     virtual void tick(Price last_price, SubmitFn submit, CancelFn cancel) = 0;
 
     // Called when a fill is received for one of this trader's orders.
-    virtual void on_fill(const Fill& fill) { portfolio_.apply_fill(fill.maker_trader_id == id_ ? Side::Sell : Side::Buy, fill.fill_price, fill.fill_qty); }
+    virtual void on_fill(const Fill& fill) {
+        if (fill.maker_trader_id != id_ && fill.taker_trader_id != id_) return;
+        bool is_taker = (fill.taker_trader_id == id_);
+        Side side = is_taker ? fill.taker_side
+                             : (fill.taker_side == Side::Buy ? Side::Sell : Side::Buy);
+        portfolio_.apply_fill(side, fill.fill_price, fill.fill_qty);
+    }
 
     void reset() { portfolio_.reset(starting_balance_); }
 
