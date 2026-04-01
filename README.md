@@ -2,8 +2,6 @@
 
 A high-performance simulated trading exchange in pure C++20 with a fullscreen terminal UI. *Talat* (ตลาด) means *market* in Thai.
 
-Built as a systems/quant portfolio piece showcasing lock-free concurrency, market microstructure, and real-time terminal rendering — no Python, no web stack, just a self-contained binary.
-
 ```
  TALAT   BTC   $63,847.12                              orders: 4823/s
 
