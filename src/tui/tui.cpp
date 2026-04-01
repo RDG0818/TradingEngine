@@ -28,9 +28,11 @@ std::string fmt_qty(Quantity q) {
 }
 
 Element depth_bar(Quantity qty, Quantity max_qty, Color bar_color) {
-    int width = max_qty > 0 ? static_cast<int>(qty * 10 / max_qty) : 0;
-    width = std::clamp(width, 0, 10);
-    return text(std::string(static_cast<size_t>(width), '\xe2')) | color(bar_color) | size(WIDTH, EQUAL, 10);
+    int filled = max_qty > 0 ? static_cast<int>(qty * 10 / max_qty) : 0;
+    filled = std::clamp(filled, 0, 10);
+    std::string bar(static_cast<size_t>(filled), '|');
+    bar += std::string(static_cast<size_t>(10 - filled), ' ');
+    return text(bar) | ftxui::color(bar_color);
 }
 
 } // namespace
@@ -226,15 +228,15 @@ void TUI::run() {
         }
         if (!status_msg.empty()) {
             stat_rows.push_back(separator());
-            stat_rows.push_back(text(status_msg) | dim);
+            stat_rows.push_back(paragraph(status_msg) | dim);
         }
 
         return vbox({
             render_header_impl(last_price, ops),
             hbox({
-                vbox(std::move(book_rows)) | border | flex,
-                vbox(std::move(fill_rows)) | border | flex,
-                vbox(std::move(stat_rows)) | border | size(WIDTH, EQUAL, 35),
+                vbox(std::move(book_rows)) | border | size(WIDTH, EQUAL, 37),
+                vbox(std::move(fill_rows)) | border | size(WIDTH, EQUAL, 32),
+                vbox(std::move(stat_rows)) | border | flex,
             }) | flex,
             hbox({text(" > "), input_component->Render()}) | border,
         });
