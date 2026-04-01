@@ -27,6 +27,16 @@ std::string fmt_qty(Quantity q) {
     return ss.str();
 }
 
+std::string fmt_pnl(int64_t pnl) {
+    // pnl in fixed-point (10000 = $1.00)
+    int64_t abs_pnl = std::abs(pnl);
+    std::ostringstream ss;
+    ss << (pnl >= 0 ? "+$" : "-$")
+       << abs_pnl / 10000 << "."
+       << std::setfill('0') << std::setw(2) << (abs_pnl % 10000) / 100;
+    return ss.str();
+}
+
 Element depth_bar(Quantity qty, Quantity max_qty, Color bar_color) {
     int filled = max_qty > 0 ? static_cast<int>(qty * 10 / max_qty) : 0;
     filled = std::clamp(filled, 0, 10);
@@ -80,6 +90,10 @@ void TUI::on_fill(const Fill& fill) {
     std::lock_guard lock(state_mutex_);
     recent_fills_.push_front(fill);
     if (recent_fills_.size() > 20) recent_fills_.pop_back();
+    if (fill.maker_trader_id == user_id_ || fill.taker_trader_id == user_id_) {
+        user_fills_.push_front(fill);
+        if (user_fills_.size() > 8) user_fills_.pop_back();
+    }
 }
 
 static Element render_header_impl(Price last_price, double ops_per_sec) {
@@ -229,17 +243,56 @@ void TUI::run() {
         if (uid != 0) {
             stat_rows.push_back(separator());
             auto portfolio = exchange_.portfolio_snapshot(uid);
-            int64_t pos = portfolio.position;
-            Color pos_color = pos > 0 ? Color::GreenLight : pos < 0 ? Color::RedLight : Color::GrayLight;
-            stat_rows.push_back(hbox({
-                text("position ") | dim | color(Color::GrayLight),
-                filler(),
-                text((pos >= 0 ? "+" : "") + std::to_string(pos)) | bold | color(pos_color),
-            }));
+            int64_t pos  = portfolio.position;
+            int64_t upnl = portfolio.unrealized_pnl;
+            Price   avg  = portfolio.avg_cost;
+            Color pos_color  = pos  > 0 ? Color::GreenLight : pos  < 0 ? Color::RedLight : Color::GrayLight;
+            Color upnl_color = upnl > 0 ? Color::GreenLight : upnl < 0 ? Color::RedLight : Color::GrayLight;
+            stat_rows.push_back(hbox({text("position ") | dim | color(Color::GrayLight), filler(),
+                text((pos >= 0 ? "+" : "") + std::to_string(pos)) | bold | color(pos_color)}));
+            if (avg > 0)
+                stat_rows.push_back(hbox({text("avg cost ") | dim | color(Color::GrayLight), filler(),
+                    text("$" + std::to_string(avg / 10000)) | bold | color(Color::Yellow)}));
+            if (pos != 0)
+                stat_rows.push_back(hbox({text("unreal PnL") | dim | color(Color::GrayLight), filler(),
+                    text(fmt_pnl(upnl)) | bold | color(upnl_color)}));
+
+            // User trade history
+            std::deque<Fill> my_fills;
+            {
+                std::lock_guard lock2(state_mutex_);
+                my_fills = user_fills_;
+            }
+            if (!my_fills.empty()) {
+                stat_rows.push_back(separator());
+                stat_rows.push_back(text("MY TRADES") | bold | color(Color::Cyan));
+                for (const auto& f : my_fills) {
+                    Side user_side = (f.taker_trader_id == uid)
+                        ? f.taker_side
+                        : (f.taker_side == Side::Buy ? Side::Sell : Side::Buy);
+                    Color c = (user_side == Side::Buy) ? Color::GreenLight : Color::RedLight;
+                    stat_rows.push_back(hbox({
+                        text(user_side == Side::Buy ? "BUY " : "SELL") | bold | color(c),
+                        text(" "),
+                        text(std::to_string(f.fill_qty)) | color(Color::GrayLight),
+                        text(" @") | dim,
+                        filler(),
+                        text(fmt_price(f.fill_price)) | color(Color::Yellow),
+                    }));
+                }
+            }
         }
         if (!status_msg.empty()) {
             stat_rows.push_back(separator());
-            stat_rows.push_back(paragraph(status_msg) | color(Color::CyanLight));
+            // paragraph() doesn't handle \n — split manually
+            std::istringstream iss(status_msg);
+            std::string line;
+            while (std::getline(iss, line)) {
+                if (line.empty())
+                    stat_rows.push_back(text(" "));
+                else
+                    stat_rows.push_back(text(line) | color(Color::CyanLight));
+            }
         }
 
         return vbox({

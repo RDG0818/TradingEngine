@@ -34,6 +34,7 @@ private:
     mutable std::mutex state_mutex_;
     BookSnapshot book_;
     std::deque<Fill> recent_fills_;
+    std::deque<Fill> user_fills_;
     std::string status_message_;
 
     TraderId user_id_{0};
