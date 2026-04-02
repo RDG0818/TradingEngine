@@ -134,6 +134,32 @@ Subscribes to `OrderAcceptedEvent` and maintains a **rolling 5-second deque** of
 
 All prices are `uint64_t` with an implicit scale of **10,000 units = $1.00**. This avoids floating-point rounding in financial calculations. Example: $64,200.50 → `642,005,000`. The TUI and order parser convert to/from `double` only at the user boundary.
 
+### Profiling Analysis
+
+Profiled with `perf stat` and `perf record` on the throughput benchmark (Release build, i7-1255U).
+
+**`perf stat` summary:**
+
+| Counter | Value | Meaning |
+|---|---|---|
+| Context switches | **0** | Lock-free queue never blocks the submitting thread |
+| Branch miss rate | **1.5%** | Matcher control flow is highly predictable |
+| Backend bound | **50%** | Memory-latency-limited, not compute-limited |
+| IPC | **0.44** | Low instructions-per-cycle, consistent with pointer-chasing bottlenecks |
+
+**Hot path breakdown** (`perf report`, inside `OrderMatcher::run_loop → try_match_limit`):
+
+- **~10% of `add_order` in `operator new`** — `PriceLevel` holds a `std::list<OrderId>`, which heap-allocates a separate node per resting order. This is the single largest unnecessary allocation in the hot path.
+- **~16% in lock primitives** — `rwlock_wrlock` (3.9%) + `rwlock_unlock` (7.7%) + `rwlock_rdlock` (4.5%). The `shared_mutex` guarding the book is taken on every mutation and snapshot.
+- **5% in `std::_Hash_bytes`** — hashing `OrderId` for the `unordered_map<OrderId, LimitOrder>` that backs O(1) order lookup.
+- **7% in `OrderBook::snapshot()`** — copying bid/ask vectors under the read lock, triggered by `BookUpdateEvent` on every fill or add.
+
+**Two concrete optimization targets** if pushing latency further:
+
+1. **Pool-allocate `PriceLevel` order lists** — replace `std::list<OrderId>` with a `std::vector` backed by a per-level slab allocator. Price levels are long-lived and frequently reused; eliminating per-order `new`/`delete` would cut the `add_order` cost roughly in half.
+
+2. **Replace `shared_mutex` with a seqlock** — the book has one writer (the matcher thread) and many readers (TUI, snapshots). A seqlock lets readers proceed with no atomic RMW: the writer increments a sequence counter before and after each mutation; readers spin-retry if they observe an odd count. This would reclaim most of the 16% spent in lock primitives.
+
 ## Requirements
 
 - C++20 compiler (GCC 12+ or Clang 14+)
