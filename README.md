@@ -136,29 +136,40 @@ All prices are `uint64_t` with an implicit scale of **10,000 units = $1.00**. Th
 
 ### Profiling Analysis
 
-Profiled with `perf stat` and `perf record` on the throughput benchmark (Release build, i7-1255U).
+Profiled on an Intel i7-1255U (hybrid P-core/E-core, 12 threads), Release build.
 
-**`perf stat` summary:**
+**Sanitizers** — all clean:
 
-| Counter | Value | Meaning |
+| Sanitizer | Checks | Result |
 |---|---|---|
-| Context switches | **0** | Lock-free queue never blocks the submitting thread |
-| Branch miss rate | **1.5%** | Matcher control flow is highly predictable |
-| Backend bound | **50%** | Memory-latency-limited, not compute-limited |
-| IPC | **0.44** | Low instructions-per-cycle, consistent with pointer-chasing bottlenecks |
+| ASan + UBSan | Heap/stack overflows, use-after-free, UB, signed overflow | Pass |
+| TSan | Data races across all concurrent paths (matcher thread, trader registry, EventBus, shared_mutex) | Pass |
 
-**Hot path breakdown** (`perf report`, inside `OrderMatcher::run_loop → try_match_limit`):
+**`perf stat` (key counters):**
 
-- **~10% of `add_order` in `operator new`** — `PriceLevel` holds a `std::list<OrderId>`, which heap-allocates a separate node per resting order. This is the single largest unnecessary allocation in the hot path.
-- **~16% in lock primitives** — `rwlock_wrlock` (3.9%) + `rwlock_unlock` (7.7%) + `rwlock_rdlock` (4.5%). The `shared_mutex` guarding the book is taken on every mutation and snapshot.
-- **5% in `std::_Hash_bytes`** — hashing `OrderId` for the `unordered_map<OrderId, LimitOrder>` that backs O(1) order lookup.
-- **7% in `OrderBook::snapshot()`** — copying bid/ask vectors under the read lock, triggered by `BookUpdateEvent` on every fill or add.
+| Counter | Value | Interpretation |
+|---|---|---|
+| IPC (P-core) | **0.61** | CPU pipeline ~25% utilized — memory-latency-bound, not compute-bound |
+| IPC (E-core) | **0.55** | Same pattern on efficiency cores |
+| Cache miss rate | **25–29%** | Elevated; `flat_map` + `unordered_map` working set exceeds L1 under load |
+| Futex time | **0.638 ms total** | Lock contention is negligible |
+| sys time | **34% of wall time** | See strace findings below |
 
-**Two concrete optimization targets** if pushing latency further:
+**strace syscall breakdown** (full `-c` run):
 
-1. **Pool-allocate `PriceLevel` order lists** — replace `std::list<OrderId>` with a `std::vector` backed by a per-level slab allocator. Price levels are long-lived and frequently reused; eliminating per-order `new`/`delete` would cut the `add_order` cost roughly in half.
+| Syscall | Calls | % time | Source |
+|---|---|---|---|
+| `clock_nanosleep` | 10,001 | 52% | Trader registry tick thread sleeping between ticks (200ms interval) |
+| `sched_yield` | 16,240 | 46% | Matcher worker yielding when lock-free queue is empty |
+| `brk` / `mmap` | 87 | <1% | Allocator — startup only, zero hot-path allocation |
 
-2. **Replace `shared_mutex` with a seqlock** — the book has one writer (the matcher thread) and many readers (TUI, snapshots). A seqlock lets readers proceed with no atomic RMW: the writer increments a sequence counter before and after each mutation; readers spin-retry if they observe an odd count. This would reclaim most of the 16% spent in lock primitives.
+The elevated sys/wall ratio is entirely accounted for by idle-thread behavior (sleeping and yielding), not contention or allocator pressure.
+
+**Known optimization targets** if pushing latency further:
+
+1. **Pool-allocate `PriceLevel` order lists** — `std::list<OrderId>` heap-allocates one node per resting order. Replacing with a slab-allocated `std::vector` would eliminate per-order `new`/`delete` on the hot path.
+
+2. **Replace `shared_mutex` with a seqlock** — the book has one writer (matcher) and many readers (TUI, snapshots). A seqlock lets readers proceed with no atomic RMW: writer increments a sequence counter before/after mutation; readers retry if they observe an odd count. Eliminates lock primitive overhead entirely for the common read case.
 
 ## Requirements
 

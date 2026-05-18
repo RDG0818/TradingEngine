@@ -1,0 +1,114 @@
+TALAT — INTERVIEW QUESTIONS
+===========================
+
+ARCHITECTURE & DESIGN
+----------------------
+1.  Walk me through the overall architecture of Talat from top to bottom. What are the main components and how do they communicate?
+
+2.  Why is the matching engine single-threaded? What does that design decision buy you, and what does it cost?
+
+3.  You explicitly traded off performance for readability in places. Give me two concrete examples of a choice you made that hurt performance but improved clarity.
+
+4.  You're using C++20. Which specific features from C++20 do you actually use in this project, and why did each one help?
+
+5.  If you needed to add a second tradable instrument (say ETH alongside BTC), how would you extend the architecture? Where does it get complicated?
+
+
+MATCHING ENGINE
+---------------
+6.  Walk me through exactly what happens when a user types "buy 5 @ 64000" and presses enter. Trace it through every layer.
+
+7.  You wrap submit and cancel commands in a std::variant<SubmitCmd, CancelCmd>. Why a variant instead of a base class with virtual dispatch? What's the tradeoff?
+
+8.  What is the moodycamel ConcurrentQueue? How does a lock-free MPSC queue work internally at a high level, and why did you choose it over a std::queue protected by a mutex?
+
+9.  The matcher runs a tight bulk_dequeue loop on one thread. What happens to submitting threads while the matcher is busy? Do they block?
+
+10. Explain GTC, IOC, and FOK semantics. When would a real trader use each one?
+
+11. How do stop orders work? When are they triggered, and how does the matcher know to check them?
+
+12. What is self-match prevention? Why does it exist, and what would happen if you removed it?
+
+13. Partial fills: you track filled_qty_ in a separate unordered_map<OrderId, Quantity> on the matcher rather than inside the order struct. Why?
+
+14. How does the matcher measure order processing latency, and what exactly does that latency represent? What is and isn't included in the measurement?
+
+
+ORDER BOOK
+----------
+15. Why boost::container::flat_map instead of std::map for the price levels? Walk me through the performance difference.
+
+16. What is the time complexity of add_order, cancel_order, and best_bid? Are there any gotchas?
+
+17. Bids are stored in a flat_map sorted ascending, but you access them with rbegin→rend. Why not just store them descending and walk forward?
+
+18. PriceLevel uses std::list<OrderId> for the queue within a level. What property of std::list makes it appropriate here? What does it cost you?
+
+19. What is price-time priority? How does your book enforce it, specifically?
+
+20. You have a separate unordered_map<OrderId, LimitOrder> alongside the price-level maps. Why not embed the full LimitOrder inside PriceLevel?
+
+21. After all orders at a price level cancel, what happens to that entry in the flat_map? Is that a problem?
+
+
+CONCURRENCY & SYNCHRONIZATION
+------------------------------
+22. The OrderBook uses a shared_mutex. Describe the reader/writer pattern: who takes shared locks, who takes exclusive locks, and why?
+
+23. What is the "snapshot-before-callback" pattern in the walk methods? Why is it there and what deadlock does it prevent?
+
+24. Explain acquire and release memory ordering. LatentPrice uses memory_order_release on store and memory_order_acquire on load — what guarantee does that give you, and what would break if you used relaxed on both?
+
+25. What is a data race in the C++ memory model? How does TSan detect one?
+
+26. TSan passed. Does that mean the code is race-free? Explain your confidence level.
+
+27. The EventBus publish takes a shared lock but subscribe takes a unique (exclusive) lock. Why the asymmetry?
+
+28. next_token_ in EventBus uses memory_order_relaxed on fetch_add. Is that safe? Why?
+
+
+EVENTBUS
+--------
+29. How does EventBus achieve type-safe event dispatch when the handler map is keyed by std::type_index and stores std::any?
+
+30. What is std::type_index? How does it identify a type at runtime?
+
+31. What overhead does std::any introduce compared to a typed pointer? In what scenario would that matter?
+
+32. What is a SubscriptionToken and why does subscribe return one? What happens if you don't unsubscribe before the subscriber is destroyed?
+
+
+MARKET MICROSTRUCTURE / FINANCIAL
+-----------------------------------
+33. Explain the Glosten-Milgrom adverse selection model in plain language. How does your MarketMaker implement it, and what behavior does it produce?
+
+34. What is Geometric Brownian Motion? Why do you model the fair value with zero drift instead of some positive expected return?
+
+35. InformedTrader submits IOC limit orders instead of GTC. Why? What would change if it used GTC?
+
+36. What would happen to price dynamics if you removed NoiseTrader entirely and only had MarketMaker + InformedTrader?
+
+37. What is Poisson arrival modeling for order flow? Why is it a more realistic model than "one order per tick"?
+
+38. Prices are stored as uint64_t fixed-point (10000 = $1.00) instead of double. Why? What specific problem does floating-point cause in financial calculations?
+
+
+PROFILING & SYSTEMS
+--------------------
+39. We ran perf stat and saw IPC of ~0.55. What does IPC mean, and what does a value of 0.55 tell you about this workload?
+
+40. Cache miss rate came out at 25–29%. What causes that in this codebase, and is it a problem given the design goals?
+
+41. perf stat showed sys time exceeded user time (34% of wall time in kernel). What tools did you use to investigate, and what did you actually find?
+
+42. What are AddressSanitizer, UBSanitizer, and ThreadSanitizer? What does each one check, and how does each one work mechanically?
+
+43. Why must TSan and ASan be compiled separately — why can't you combine them into one build?
+
+44. What is a flame graph? How do you generate one on Linux and what does it show you?
+
+45. What is perf c2c, and why would it be particularly interesting for this codebase?
+
+46. If you needed to cut p99 latency from 166µs to under 10µs to be competitive with a production exchange, list the first three changes you'd make and why.

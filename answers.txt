@@ -1,0 +1,833 @@
+TALAT — SAMPLE ANSWERS
+=======================
+
+ARCHITECTURE & DESIGN
+----------------------
+
+1. Walk me through the overall architecture of Talat from top to bottom.
+
+   The binary entry point is main.cpp, which constructs an Exchange and a TUI, then
+   hands control to the TUI's event loop. The Exchange is the top-level orchestrator:
+   it owns an OrderMatcher, a TraderRegistry, an EventBus, and a map of Portfolio
+   objects (one per trader).
+
+   The OrderMatcher runs on its own dedicated worker thread. Callers from any thread
+   enqueue orders through a moodycamel lock-free MPSC queue. The worker drains that
+   queue in a tight loop and calls into the OrderBook to add or cancel orders, running
+   the matching algorithm as it goes.
+
+   The TraderRegistry owns a LatentPrice (the GBM fair value) and runs three types of
+   automated traders on a configurable tick thread. Each tick it advances the GBM and
+   calls tick() on every registered trader, passing lambdas for submit and cancel so
+   traders can enqueue orders without a direct reference to the matcher.
+
+   Communication between components is through the EventBus, a type-erased pub/sub
+   system. When a fill occurs, the matcher publishes a FillEvent; subscribers (Portfolio
+   updater, StatsTracker, TUI) react independently. This decouples the matcher from
+   everything that cares about its output.
+
+   The TUI (ftxui) renders three panels — order book snapshot, recent fills, stats —
+   and a command bar for user order entry. It reads state by calling book_snapshot()
+   and portfolio_snapshot() on the Exchange, which acquire locks and return copies.
+
+
+2. Why is the matching engine single-threaded?
+
+   All order book mutations happen on a single thread, so the book needs no internal
+   write locks during matching. The matching algorithm itself is a loop that walks
+   price levels, removes orders, and updates quantities — with multiple threads doing
+   this concurrently you'd need fine-grained locks per price level, and the complexity
+   and contention would likely cost more than you'd gain.
+
+   The lock-free queue moves the concurrency problem to the boundary: producers
+   (traders, user) enqueue freely, the single consumer processes sequentially. This
+   makes the system correct by construction for the hot path. The cost is that orders
+   queue behind each other; if one order takes 500µs to match, the next waits. For a
+   simulation this is fine. A production exchange at sub-microsecond latency would use
+   a different model (kernel bypass, DPDK, etc.).
+
+
+3. Give two concrete examples of choosing readability over performance.
+
+   First: std::list<OrderId> inside PriceLevel for FIFO ordering within a level.
+   A linked list heap-allocates one node per order, which means every add_order call
+   hits the global allocator. A ring buffer or pool-allocated slab would eliminate
+   those allocations entirely. I chose list because its semantics — O(1) splice,
+   stable iterators, FIFO with push_back/pop_front — map directly to the concept, and
+   the code reads like the design doc.
+
+   Second: shared_mutex on the OrderBook for snapshot reads. A seqlock would let TUI
+   readers proceed with zero atomic read-modify-write operations — the writer just
+   increments a counter, readers check it. But a seqlock requires the reader to retry
+   if it catches a write in progress, and the retry logic plus the counter management
+   add non-obvious invariants. shared_mutex is standard, well-understood, and the
+   perf cost (the ~16% in lock primitives we see in profiling) is acceptable for a
+   TUI refresh at 60Hz.
+
+
+4. Which C++20 features do you use?
+
+   std::variant for the Command type in OrderMatcher (SubmitCmd | CancelCmd) and for
+   the Order type (LimitOrder | MarketOrder | StopLimitOrder | StopMarketOrder).
+   std::visit dispatches on the variant without a vtable. This was stabilized and
+   cleaned up meaningfully in C++20.
+
+   Designated initializers for aggregate initialization of order structs —
+   LimitOrder{.id=1, .side=Side::Buy, ...} is clearer than positional args.
+
+   Concepts and ranges are not used directly, but the project targets C++20 to get
+   the improved constexpr, three-way comparison (spaceship operator), and the cleaner
+   lambda captures. The atomic::wait/notify API (C++20) would also be relevant if
+   replacing sched_yield with a proper wait in the matcher loop.
+
+
+5. How would you extend to multiple instruments?
+
+   Straightforward parts: OrderBook is already stateless per-instrument, so you'd
+   instantiate one per symbol. TraderRegistry would need per-instrument LatentPrice
+   objects and traders that know which instrument they trade.
+
+   Hard parts: the EventBus today is global — FillEvent doesn't carry a symbol field,
+   so subscribers can't filter. You'd add a symbol field to every event and filter in
+   subscribers, or create per-symbol event buses.
+
+   Harder: the OrderMatcher's single worker thread becomes a bottleneck if you have N
+   instruments with N independent order flows. You'd want one matcher thread per
+   instrument (simple, scales to small N) or a work-stealing thread pool partitioned
+   by symbol hash (more complex). Cross-instrument strategies (e.g. pairs trading)
+   then need atomic access to two books simultaneously, which is a classic TOCTOU
+   problem — real exchanges solve it with a coordinator or by restricting cross-symbol
+   orders to a special order type.
+
+
+MATCHING ENGINE
+---------------
+
+6. Walk me through what happens when a user submits "buy 5 @ 64000".
+
+   The TUI command parser reads the string, converts $64,000 to fixed-point
+   (640,000,000), and calls exchange.submit_order() with a LimitOrder struct.
+
+   Exchange::submit_order() calls matcher.submit(), which wraps the LimitOrder in a
+   SubmitCmd, wraps that in the Command variant, and calls queue_.enqueue(cmd). This
+   is a lock-free enqueue into the moodycamel ConcurrentQueue. The calling thread
+   returns immediately.
+
+   On the matcher worker thread, run_loop() is draining the queue with bulk_dequeue.
+   It picks up the SubmitCmd, calls process_order(), which dispatches via std::visit
+   to process_limit().
+
+   process_limit() calls try_match_limit(). The algorithm walks the ask side of the
+   book from best ask inward. For each resting ask level whose price <= the bid price
+   (64,000 in this case), it fills against resting orders in FIFO order. Each fill:
+   computes fill_qty = min(taker_remaining, maker_qty), emits a FillEvent on the bus,
+   updates filled_qty_ for both orders, removes fully-filled makers from the book.
+
+   If the order is IOC and unfilled remainder exists, it's cancelled. If GTC and
+   unfilled, it's added to the bid side of the book at the limit price.
+
+   Finally, an OrderAcceptedEvent is published with the dequeue timestamp for latency
+   tracking.
+
+
+7. Why std::variant<SubmitCmd, CancelCmd> instead of virtual dispatch?
+
+   Two reasons: value semantics and zero virtual overhead.
+
+   With a variant, commands are plain structs stored inline in the queue — no heap
+   allocation per command, no vtable pointer, no indirection on dispatch. std::visit
+   compiles to a jump table or a branch, both of which are fast and predictable.
+
+   Virtual dispatch requires the object to live on the heap (or at least have a stable
+   address for the vtable pointer), which means either dynamic allocation per command
+   or a type-erased wrapper — both add overhead. For something enqueued millions of
+   times per second, value types win.
+
+   The tradeoff: adding a new command type requires touching every std::visit call
+   site. With virtual, you add a new subclass. For a closed set of two commands, the
+   variant is clearly better.
+
+
+8. What is moodycamel ConcurrentQueue and how does a lock-free MPSC queue work?
+
+   moodycamel::ConcurrentQueue is an MPMC lock-free queue (technically it supports
+   multiple consumers too, though we use SPSC-style with one consumer). Internally it
+   uses a segmented ring buffer. Producers claim a slot with a fetch_add on an atomic
+   index, write their data, then set a "sequence" field on that slot to signal the
+   consumer. The consumer checks the expected sequence value; if it matches, the slot
+   is ready. No mutex, no kernel involvement unless the queue is empty and you
+   choose to sleep.
+
+   vs std::queue + mutex: the mutex version blocks all producers while one holds the
+   lock. Under high contention (many traders all submitting at once) you get lock
+   convoy — producers queue up waiting for the mutex. The lock-free version lets
+   every producer write its slot independently; the only contention is on the atomic
+   index, which resolves with a hardware CAS, not a kernel futex. Our strace confirmed
+   this: 150 futex calls total (negligible) over the entire benchmark run.
+
+
+9. What happens to submitting threads while the matcher is busy?
+
+   Nothing — they don't block. enqueue() is a non-blocking call: it does an atomic
+   fetch_add to claim a slot and writes the data. If the queue's current segment is
+   full, it allocates a new segment (one allocation, amortized). The submitting thread
+   then returns to whatever it was doing.
+
+   The matcher drains the queue at its own pace. If producers consistently outpace
+   the consumer, the queue grows unbounded (moodycamel doesn't have a capacity limit
+   by default). In our simulation this doesn't happen — the tick thread submits a
+   small batch every 200ms, well within the matcher's drain rate.
+
+
+10. Explain GTC, IOC, and FOK.
+
+    GTC (Good Till Cancel): the order rests in the book until it fills, is cancelled
+    explicitly, or the session ends. Standard resting limit order.
+
+    IOC (Immediate Or Cancel): the order attempts to match immediately. Any unfilled
+    quantity is cancelled — it never rests. Used by InformedTrader because it wants
+    directional execution now or not at all; leaving a resting order would expose it
+    to adverse fills after the signal has decayed.
+
+    FOK (Fill Or Kill): the entire order must fill immediately in one atomic operation,
+    or the whole thing is cancelled. Useful when a trader needs a specific block size
+    and partial fills are worse than no fill (e.g. a hedger who needs exactly 100
+    units to offset a position). Implementation: before matching, check if enough
+    liquidity exists at the limit price; if not, cancel immediately without touching
+    the book.
+
+
+11. How do stop orders work?
+
+    Stop orders sit in pending_stop_limits_ or pending_stop_markets_ maps on the
+    matcher, keyed by OrderId. After every fill in try_match_limit, the matcher calls
+    check_stop_orders(last_trade_price).
+
+    check_stop_orders iterates both pending maps. For a stop-buy, it triggers when
+    last_trade_price >= stop_price (price rose past the trigger). For a stop-sell,
+    it triggers when last_trade_price <= stop_price (price fell past the trigger).
+
+    When triggered, the stop order is removed from pending and resubmitted as a regular
+    limit or market order. This means stop orders are processed synchronously on the
+    matcher thread — no race condition between "price crosses stop" and "stop fires".
+
+    The cost: O(n) scan of pending stops after every fill. In production with thousands
+    of pending stops, you'd use a sorted structure (priority queue or flat_map keyed by
+    stop_price) to find triggered orders in O(log n).
+
+
+12. What is self-match prevention?
+
+    If the same TraderId is both the maker and the taker of a potential fill, the fill
+    is skipped. The check is in try_match_limit: when walking the opposite side, if the
+    resting order's trader_id == the aggressor's trader_id, skip that order and
+    continue.
+
+    Without it, a trader could "wash trade" — buy and sell to themselves, generating
+    artificial volume and fills that show up in the tape without any real economic
+    transfer. In regulated markets this is illegal. In a simulation it distorts the
+    fill-rate signal that MarketMaker uses for adverse selection detection.
+
+
+13. Why track filled_qty_ separately instead of inside the order struct?
+
+    Orders in the queue are plain value types (structs passed by copy). There's no
+    shared object to mutate — the LimitOrder in the queue slot is a copy of what the
+    caller submitted. Once it's in the book (add_order), the book holds a copy in
+    orders_. Updating qty in the book's copy while also tracking progress separately
+    would require the book to expose a mutable interface the matcher coordinates with.
+
+    Keeping filled_qty_ on the matcher as a separate map is simpler: the matcher owns
+    the matching state, the book owns the resting state. Separation of concerns.
+
+    The tradeoff: it's one more map lookup per fill. For the hot path, an
+    unordered_map<OrderId, Quantity> lookup is O(1) amortized and cheap.
+
+
+14. How does the matcher measure latency and what does it actually represent?
+
+    When the matcher dequeues a command, it captures dequeue_tp = steady_clock::now().
+    After matching, it publishes OrderAcceptedEvent with submit_tp = dequeue_tp.
+    StatsTracker subscribes, records (now - submit_tp) as latency_us when the event
+    fires.
+
+    What this measures: time from when the matcher thread picked up the order to when
+    the matching + book insertion completed and the event was published. It includes
+    queue drain time (the time the order waited in the queue) plus matching time.
+
+    What it does NOT measure: network latency, serialization, the time from the user
+    pressing enter to enqueue() being called. This is a useful lower bound for
+    "exchange processing time" but not an end-to-end roundtrip latency.
+
+
+ORDER BOOK
+----------
+
+15. Why boost::container::flat_map over std::map?
+
+    flat_map stores its key-value pairs in a contiguous sorted array (like std::vector
+    of pairs), not a tree of heap-allocated nodes. This gives two advantages:
+
+    Cache locality: iterating price levels walks a contiguous block of memory. With
+    std::map, each tree node is a separate heap allocation; walking best-to-worst price
+    chases pointers across random memory addresses, causing cache misses at every node.
+    With flat_map, adjacent levels are adjacent in memory.
+
+    Lower overhead per element: std::map nodes carry left/right/parent pointers (24
+    bytes overhead per node on 64-bit). flat_map has none of that.
+
+    The cost: insertions and deletions are O(n) because the array must stay sorted.
+    But for an order book, price levels are long-lived (orders accumulate at a price;
+    the level is only removed when completely drained). Insertions at new price points
+    are infrequent; walking existing levels during matching is the hot operation.
+
+
+16. Time complexity of key operations.
+
+    best_bid(): O(1) amortized — rbegin() on the ascending flat_map gives the highest
+    bid. Actually O(1) exactly since flat_map tracks begin/end as array pointers.
+
+    best_ask(): O(1) — begin() on the ask flat_map.
+
+    add_order(): O(log n) to find/insert the price level in the flat_map, O(1) to
+    insert the OrderId at the back of the level's list. But flat_map insertion is
+    O(n) in the worst case (shifting elements) if a new price level is created between
+    existing ones.
+
+    cancel_order(): O(1) for the flat_map lookup (find by price from the order in
+    orders_), O(n) to find and erase the OrderId from the level's std::list. std::list
+    erase is O(1) given an iterator, but we have to search linearly to find the
+    OrderId. This is an O(n) operation where n = orders at that price level.
+
+    try_match_limit (walking): O(k) where k = number of price levels crossed.
+
+
+17. Why store bids ascending and walk rbegin→rend?
+
+    flat_map's comparator determines element order. Using the default less<Price>, both
+    bids and asks are stored ascending. This is the natural order for asks (lowest ask
+    is best, at begin()). For bids, you want the highest bid first (best bid = highest
+    price), so you walk rbegin→rend.
+
+    You could store bids with greater<Price> to make begin() the best bid, but then
+    you'd have two different comparators for bids and asks, making the code less
+    uniform and more error-prone. The rbegin trick keeps both maps using the same
+    type and template parameters, simplifying the snapshot and walk logic.
+
+
+18. Why std::list<OrderId> for FIFO within a price level?
+
+    Price-time priority requires that within a price level, the earliest-arriving
+    order fills first. std::list gives O(1) push_back (new order arrives at back) and
+    O(1) pop_front (oldest order fills first). No reallocation, stable iterators.
+
+    The cost: each list node is a separate heap allocation. For a price level with
+    100 resting orders, that's 100 separate allocations. This is the largest source
+    of allocator pressure on the hot path — confirmed in profiling.
+
+    Alternative: a circular buffer (std::deque) or a pool-allocated intrusive list.
+    std::deque gives O(1) push_back and pop_front without per-element allocation.
+    An intrusive list embedded in the LimitOrder struct would eliminate the allocation
+    entirely. The readability cost is real: intrusive lists require more careful
+    ownership reasoning.
+
+
+19. What is price-time priority and how does your book enforce it?
+
+    Price-time priority (FIFO matching) means: orders at a better price always fill
+    before orders at a worse price; among orders at the same price, the oldest order
+    fills first.
+
+    The book enforces price priority by walking the flat_map from best price inward —
+    rbegin for bids (highest first), begin for asks (lowest first). It never skips a
+    better price to fill a worse one.
+
+    Time priority within a level is enforced by the std::list. Orders are appended
+    with push_back in arrival order. The matching loop pops from the front, so the
+    earliest-arrived order is always consumed first.
+
+
+20. Why a separate unordered_map<OrderId, LimitOrder>?
+
+    Two reasons: O(1) order lookup by ID and data layout.
+
+    When a cancel comes in, we receive an OrderId. We need to know the order's price
+    to find the right price level in the flat_map. If the full LimitOrder were only
+    inside PriceLevel's list, we'd have to scan every price level to find it — O(n)
+    across all price levels. The separate orders_ map gives O(1) lookup: find the
+    order by ID, extract its price, go directly to the right level.
+
+    Data layout: PriceLevel needs to be small and cache-friendly for the matching
+    walk. Embedding full LimitOrder structs (which include timestamps, trader IDs,
+    etc.) into the level would bloat the per-level cache footprint. Storing only
+    OrderIds in the level keeps it compact; the full struct lives separately and is
+    only accessed when needed.
+
+
+21. What happens when all orders at a price level cancel?
+
+    After removing an OrderId from the level's list, if total_qty drops to 0 (the
+    level is empty), the code should erase the entry from the flat_map. If it doesn't
+    — if empty PriceLevels are left in the map — best_bid() and best_ask() will still
+    return the correct result only if they check total_qty before returning, or if the
+    matching walk skips empty levels.
+
+    An accumulation of empty levels is a memory leak and degrades O(log n) operations
+    because n grows without bound. The fix is to erase the flat_map entry when a
+    level drains. This is a common bug to introduce when adding cancel logic.
+
+
+CONCURRENCY & SYNCHRONIZATION
+------------------------------
+
+22. The OrderBook uses shared_mutex. Who takes what locks?
+
+    shared_mutex supports two lock modes: shared (multiple holders simultaneously) and
+    exclusive (one holder, blocks all others).
+
+    Readers — TUI snapshot (book_snapshot()), InformedTrader checking best bid/ask,
+    StatsTracker snapshot — take shared_lock. Multiple TUI renders and trader checks
+    can proceed concurrently with no blocking between them.
+
+    Writers — the OrderMatcher worker calling add_order or cancel_order — take
+    unique_lock. This blocks all readers and all other writers for the duration of the
+    mutation. Since there's only one writer thread (the matcher), write-write contention
+    is impossible; the only contention is reader-writer.
+
+    The rationale: reads are frequent (TUI at 60Hz, traders every 200ms), writes are
+    bursty (batch of orders per tick). Allowing concurrent reads avoids serializing
+    all TUI renders behind the matcher.
+
+
+23. What is the snapshot-before-callback pattern and what deadlock does it prevent?
+
+    In for_each_bid / for_each_ask, the book takes a shared_lock, copies the relevant
+    OrderIds out into a local vector, releases the lock, then calls the user callback
+    with the local copy.
+
+    Without this: the callback runs while holding the shared_lock on the book. If the
+    callback tries to submit or cancel an order — which enqueues a command that the
+    matcher will process — and the matcher is waiting for the exclusive lock to mutate
+    the book, you have a deadlock: callback holds shared_lock, waiting for matcher;
+    matcher waiting for exclusive_lock, blocked by shared_lock.
+
+    With the pattern: the callback runs lock-free. The snapshot may be slightly stale
+    (written between copy and callback), but that's acceptable for a simulation.
+
+
+24. Explain acquire and release memory ordering.
+
+    Memory ordering controls how the compiler and CPU can reorder memory operations
+    relative to an atomic operation.
+
+    memory_order_release on a store: all memory writes by this thread that happened
+    before the store are visible to any thread that subsequently observes the stored
+    value with an acquire load. It's a "publish" barrier — "everything I wrote before
+    this is committed."
+
+    memory_order_acquire on a load: if this load observes a value stored with
+    memory_order_release, then all writes that the storing thread did before its
+    release store are now visible to the loading thread. It's a "consume" barrier —
+    "I can see everything the publisher wrote."
+
+    In LatentPrice: tick() computes a new price, then stores it with release. get()
+    loads with acquire. Any thread calling get() after the store is guaranteed to see
+    the updated price, not a stale cached value.
+
+    With memory_order_relaxed on both: the CPU is free to reorder the store and load
+    relative to surrounding instructions. A trader could load a stale price even after
+    the tick thread has updated it, because the cache coherence protocol has no
+    ordering obligation. In practice on x86 (TSO) you'd likely get away with it, but
+    on ARM it could fail, and it's undefined behavior in the C++ memory model.
+
+
+25. What is a data race in the C++ memory model?
+
+    A data race is when two or more threads access the same memory location
+    concurrently, at least one access is a write, and there is no synchronization
+    between them (no mutex, no atomic, no happens-before relationship). A data race
+    is undefined behavior in C++ — the compiler is allowed to assume it never happens
+    and optimize accordingly, leading to arbitrary behavior.
+
+    TSan detects races by tracking "happens-before" edges (established by mutexes,
+    atomics, thread join/fork) using vector clocks. On every memory access, it checks
+    whether the accessing thread "happens after" all previous accesses to that location.
+    If a write and another access (read or write) have no happens-before relationship,
+    TSan reports a race.
+
+
+26. TSan passed. Does that mean the code is race-free?
+
+    Not conclusively. TSan detects races that actually occur during the test run. If
+    a race requires a specific thread interleaving (e.g. thread A reads exactly between
+    thread B's write and some subsequent sync point), TSan will only catch it if that
+    interleaving happens during the run. TSan doesn't enumerate all possible
+    interleavings — it observes the ones that occur.
+
+    The confidence depends on how much concurrent behavior the tests exercise. If the
+    tests spin up the full Exchange with a trader registry and let threads run
+    concurrently for thousands of iterations, the coverage is high. If tests call
+    OrderBook directly in a single-threaded context, TSan gives almost no signal for
+    the concurrent paths.
+
+    In practice, TSan on a well-exercised test suite catches the vast majority of real
+    races. A clean TSan run is strong evidence, not a proof.
+
+
+27. Why does EventBus publish use shared_lock but subscribe use unique_lock?
+
+    The invariant: multiple events can be published simultaneously (multiple threads
+    calling publish) as long as no one is modifying the handler table. subscribe and
+    unsubscribe modify the table (adding/removing handlers), so they need exclusive
+    access.
+
+    publish only reads the handler table (to find handlers for the event type and
+    iterate them). Multiple publishers can do this simultaneously without interfering.
+    shared_lock allows this concurrent read.
+
+    subscribe writes to the table. unique_lock blocks all concurrent reads and writes
+    until the subscription is complete. This prevents publish from iterating a handler
+    vector while subscribe is in the middle of pushing a new handler to it.
+
+
+28. Is memory_order_relaxed safe for next_token_ fetch_add?
+
+    Yes. next_token_ is only used to generate unique SubscriptionToken values. The
+    only requirement is that each token is distinct — no two subscriptions get the
+    same token. fetch_add with any ordering (including relaxed) is an atomic
+    read-modify-write, so the increment is indivisible. No two threads can get the
+    same value. The relaxed ordering is fine because we don't need any happens-before
+    relationship with other memory writes — the token is just a number.
+
+
+EVENTBUS
+--------
+
+29. How does EventBus achieve type-safe dispatch?
+
+    The handler map is keyed by std::type_index, which is a runtime representation of
+    a C++ type derived from typeid(). When you call subscribe<FillEvent>(), the
+    template instantiation captures typeid(FillEvent) as the key and wraps your
+    callback in a type-erasing lambda: [cb](const std::any& e){ cb(any_cast<FillEvent>(e)); }.
+
+    When publish<FillEvent>(event) is called, it looks up typeid(FillEvent) in the
+    map, wraps the event in std::any, and calls each stored lambda. The lambda
+    any_cast-s back to FillEvent — this cast succeeds because the wrapped type matches.
+
+    Type safety: you can only receive the type you subscribed to. The any_cast would
+    throw if the stored type didn't match, but by construction the map key and the
+    stored type always correspond to the same EventType template parameter.
+
+
+30. What is std::type_index?
+
+    std::type_index is a wrapper around std::type_info (returned by typeid()) that
+    is copyable and hashable, making it usable as a map or unordered_map key. typeid()
+    itself returns a const reference to a type_info object with static storage, but
+    type_info is not copyable. type_index wraps the pointer and provides operator==,
+    operator<, and std::hash specialization.
+
+    It compares types by identity: typeid(FillEvent) == typeid(FillEvent) always,
+    and != typeid(BookUpdateEvent). It works correctly across translation units because
+    the standard guarantees type_info identity for the same type within a program.
+
+
+31. What overhead does std::any introduce?
+
+    std::any stores the object inline if it fits in a small buffer (typically 16-24
+    bytes on most implementations, the "small buffer optimization"). If the object is
+    larger, it heap-allocates. In EventBus, publish wraps the event in a local any:
+    std::any wrapped = event. Most event structs are small (FillEvent has a few
+    uint64_ts and a Price), likely fitting in the small buffer — no heap allocation.
+
+    The runtime overhead is: one copy-construction into the any buffer, one vtable
+    dispatch (any uses a type-erased vtable internally) per publish, plus any_cast
+    per handler. For a low-frequency event bus (fills, book updates) this is
+    irrelevant. If publish were called millions of times per second on a hot path,
+    you'd replace std::any with a direct typed dispatch.
+
+
+32. What is a SubscriptionToken and why does subscribe return one?
+
+    SubscriptionToken is a uint64_t that uniquely identifies a subscription. It's
+    returned so the subscriber can call unsubscribe(token) to remove the handler from
+    the bus when it no longer needs events (e.g. when the subscriber object is
+    destroyed).
+
+    Without tokens: you'd need to pass the original callback function pointer to
+    unsubscribe, but std::function is not equality-comparable, so you can't search for
+    it in the vector. A monotonic integer is the standard solution.
+
+    If you don't unsubscribe before destroying the subscriber: the handler vector still
+    holds a std::function that captures a reference or pointer to the destroyed object.
+    Calling it is undefined behavior — typically a crash. In practice, long-lived
+    subscribers (TUI, StatsTracker) subscribe once and never unsubscribe, so the
+    lifetime issue doesn't arise.
+
+
+MARKET MICROSTRUCTURE / FINANCIAL
+-----------------------------------
+
+33. Explain Glosten-Milgrom adverse selection and how MarketMaker implements it.
+
+    Glosten-Milgrom (1985) models a market maker who doesn't know whether an incoming
+    order comes from an informed trader (who knows the true value) or a noise trader
+    (who is trading for liquidity reasons). If informed traders are picking off the
+    market maker's quotes profitably, the maker is losing money on those trades.
+    The rational response is to widen the spread to recoup losses on uninformed flow.
+
+    MarketMaker tracks fills_in_window_ over the last WINDOW_TICKS (20) ticks. If
+    fill_rate = fills/ticks exceeds 30%, it interprets this as elevated informed
+    activity — the market is moving against its quotes frequently. It then computes
+    multiplier = min(1 + fill_rate * 2, 3.0), capping at 3×. The effective spread
+    becomes half_spread_ * multiplier.
+
+    This produces realistic behavior: in a quiet market the spread is tight and the
+    market maker earns the spread passively. When InformedTrader is active and prices
+    are moving, the fill rate spikes, the spread widens, and the market maker becomes
+    less willing to provide liquidity — which is what you observe in real microstructure.
+
+
+34. What is GBM and why zero drift?
+
+    Geometric Brownian Motion is a stochastic process where the log of the price
+    follows a Brownian motion with constant drift and volatility:
+    d(log P) = μ dt + σ dW
+
+    In discrete form: log_price += μ*dt + σ*Z, where Z ~ N(0,1).
+
+    Zero drift (μ = 0) means the expected price tomorrow equals the price today — no
+    directional bias. This is appropriate for modeling a "fair value" that represents
+    the market's best estimate of intrinsic value, where any trend is already priced
+    in. A nonzero drift would imply you know the price is going up or down on average,
+    which would be a specific market view rather than a neutral fair value.
+
+    GBM also ensures prices stay positive (because you exponentiate the log-price),
+    which a simple random walk on price levels doesn't guarantee.
+
+
+35. Why does InformedTrader use IOC instead of GTC?
+
+    An informed trader has a signal about where the price will be in the near future.
+    The signal is only valid for the current tick — by the next tick, the market will
+    have moved and the signal will have decayed (or the informed trader will have a
+    new signal).
+
+    Leaving a GTC limit order in the book means it could fill in a future tick at a
+    price that was only valid at submission time. By then the fair value may have moved
+    against the trader. IOC forces the question: either fill now at this price, or
+    abandon the trade. This is consistent with the informed trader's edge being
+    temporal (short-lived information).
+
+    If informed traders used GTC, they'd accumulate stale resting orders on both sides
+    of the book, essentially acting like noise traders for all fills that occur after
+    the first tick.
+
+
+36. What happens without NoiseTrader?
+
+    Without noise traders, the only participants are MarketMaker and InformedTrader.
+    The dynamic collapses:
+
+    InformedTrader submits when the signal diverges from last price. It trades against
+    the market maker's quotes. The market maker sees high fill rates (every fill is
+    from informed flow), widens to max spread (3×). At very wide spreads, the informed
+    trader's signal may not be strong enough to profitably cross the spread, so it
+    stops trading. The market freezes.
+
+    Noise traders are the "uninformed liquidity" that makes the market function. They
+    trade for reasons unrelated to value (simulated as random), providing fills to the
+    market maker that aren't adversely selected. This allows the market maker to earn
+    the spread on noise flow and accept lower spread as compensation for informed-flow
+    risk. Without noise, there is no market.
+
+
+37. What is Poisson arrival for order flow?
+
+    A Poisson process models the number of events in a time interval when: events
+    occur independently, at a constant average rate λ, and at most one event occurs
+    in any infinitesimal interval.
+
+    NoiseTrader uses λ = 0.7 per tick, meaning on average 0.7 orders per tick — in
+    practice, each tick it draws from a Poisson distribution with λ=0.7 to decide how
+    many orders to submit (usually 0 or 1, occasionally 2+).
+
+    This is more realistic than "exactly one order per tick" because real order arrival
+    is random and bursty: sometimes no orders arrive, sometimes several arrive
+    simultaneously. Poisson arrival is the standard model in market microstructure
+    literature for uninformed order flow because the independence assumption is
+    defensible (individual noise traders act independently).
+
+
+38. Why uint64_t fixed-point instead of double for prices?
+
+    Floating-point arithmetic is not associative and accumulates rounding errors.
+    $0.10 cannot be represented exactly in IEEE 754 binary floating-point — it's
+    0.1000000000000000055511151231257827021181583404541015625. In financial calculations,
+    rounding errors accumulate and can cause: incorrect fill quantity calculations,
+    prices that compare as equal when they shouldn't (or vice versa), PnL figures that
+    drift over time.
+
+    Fixed-point with 10000 units per dollar means all prices are exact integers. $64,200
+    is 642,000,000 — no rounding, no representation error. Arithmetic on uint64_t is
+    exact as long as you don't overflow (which would require prices above ~$1.8 trillion,
+    safe for any realistic asset).
+
+    The only place double is used is the GBM calculation in LatentPrice (where
+    floating-point arithmetic is appropriate for a stochastic model) and at the user
+    boundary for display and parsing.
+
+
+PROFILING & SYSTEMS
+--------------------
+
+39. What does IPC mean and what does 0.55 tell you?
+
+    IPC (Instructions Per Cycle) measures how many instructions the CPU retires per
+    clock cycle. A modern out-of-order CPU has 4-6 execution ports and can theoretically
+    retire 4+ instructions per cycle when the pipeline is full.
+
+    IPC of 0.55 means the CPU is executing less than one instruction per cycle —
+    the pipeline is spending most cycles stalled, waiting. The dominant cause of
+    pipeline stalls is memory latency: when the CPU issues a load that misses all
+    cache levels, it waits 100-200 cycles for DRAM. During those cycles, no
+    instructions retire.
+
+    For this workload, the 25-29% cache miss rate explains the low IPC. Pointer
+    chasing through the unordered_map (random memory accesses), walking the flat_map
+    (sequential but potentially cold), and the list node heap allocations all
+    contribute to cache pressure. The code is memory-latency-bound, not compute-bound.
+
+
+40. What causes the 25-29% cache miss rate?
+
+    Three main contributors:
+
+    unordered_map<OrderId, LimitOrder> order lookup: hash maps have poor spatial
+    locality. Each lookup hashes the key, indexes into a bucket array, then follows
+    a pointer to the element (or chain). These are cache-unfriendly random accesses.
+
+    std::list<OrderId> nodes: each node is a separate heap allocation scattered
+    throughout the heap. Walking a list to find an order to cancel chases pointers
+    through memory that was allocated at different times and is unlikely to be in
+    cache.
+
+    Working set size: the order book during a busy simulation has many price levels
+    with many orders each. The flat_map itself may fit in L2/L3, but the combination
+    of the order map, the level lists, and the EventBus handler dispatch pushes the
+    total working set past L1 (48KB).
+
+    Given the readability-first design goal, this is acceptable. A production HFT book
+    would use a pool allocator for order storage, making all orders contiguous in
+    memory.
+
+
+41. perf stat showed sys > user. How did you investigate it?
+
+    First ran strace -e futex -c to test the hypothesis of lock contention. Result:
+    150 futex calls, 0.638ms total — negligible. Lock contention ruled out.
+
+    Then ran strace -c (all syscalls) for a full breakdown. Top two entries:
+    - clock_nanosleep: 10,001 calls, 52% of syscall time — the TraderRegistry tick
+      thread sleeping 200ms between ticks. Correct behavior.
+    - sched_yield: 16,240 calls, 46% of syscall time — the OrderMatcher worker thread
+      calling yield when the lock-free queue is empty. Correct behavior.
+    - brk/mmap: 87 calls total, <1% — allocator, but only during startup. No hot-path
+      allocation.
+
+    Conclusion: the sys time is entirely from idle-thread behavior (sleeping and
+    yielding), not from contention, allocator pressure, or unexpected kernel activity.
+    The code is clean.
+
+
+42. What are ASan, UBSan, and TSan and how do they work?
+
+    AddressSanitizer (ASan): detects illegal memory accesses — heap buffer overflows,
+    use-after-free, stack overflows, double-free. Mechanism: instruments every memory
+    load and store at compile time. Creates a "shadow memory" map (1 byte per 8 bytes
+    of real memory) tracking whether each byte is accessible. On each access, checks
+    the shadow byte. ~2x slowdown.
+
+    UndefinedBehaviorSanitizer (UBSan): detects C++ undefined behavior — signed
+    integer overflow, null pointer dereference, misaligned access, invalid enum values,
+    invalid downcasts, out-of-bounds indexing on static arrays. Inserts runtime checks
+    at each potentially-UB operation. Minimal slowdown.
+
+    ThreadSanitizer (TSan): detects data races. Tracks "happens-before" relationships
+    using vector clocks. Records which thread last wrote each memory location and what
+    synchronization existed. On each access, verifies the accessing thread "happens
+    after" all conflicting previous accesses. ~5-10x slowdown, 5-10x memory overhead.
+
+
+43. Why can't you combine ASan and TSan into one build?
+
+    Both use shadow memory — a separate region of address space that mirrors the
+    program's memory to store metadata. ASan uses 1/8 of the address space for its
+    shadow. TSan uses a different fraction with a different layout. The two shadow
+    maps overlap and conflict. The address space cannot satisfy both simultaneously.
+
+    In practice: compile two separate binaries with two separate CMake build
+    directories (build-asan, build-tsan) and run them independently.
+
+
+44. What is a flame graph and how do you generate one?
+
+    A flame graph is a visualization of CPU time by call stack. Each horizontal bar
+    represents a function; its width represents the fraction of samples where that
+    function was on the stack. Functions are stacked vertically by call depth.
+    "Flames" (wide bars near the base) show where the CPU actually spends time.
+
+    Generation on Linux:
+    1. perf record -g --call-graph dwarf -F 999 ./build/benchmarks
+       (sample at 999Hz, capture call graphs via DWARF unwind info)
+    2. perf script outputs the raw sample data
+    3. stackcollapse-perf.pl from the FlameGraph repo folds the stacks
+    4. flamegraph.pl renders to SVG
+
+    The result is an interactive SVG you open in a browser. Click a frame to zoom in.
+    Useful for identifying which function consumes the most CPU in the hot path —
+    something perf stat (which gives aggregates) cannot show.
+
+
+45. What is perf c2c and why is it interesting here?
+
+    perf c2c (cache-to-cache) records "hitm" events — situations where one CPU core
+    reads a cache line that was recently written (and is thus "modified") by a
+    different core. This is false sharing: two logically independent variables happen
+    to live on the same 64-byte cache line, so writes by one thread invalidate the
+    cache line for all other threads.
+
+    In this codebase, the interesting candidates are:
+    - The moodycamel queue's producer and consumer index variables (producer claims
+      slots, consumer reads them — if they share a cache line, every enqueue/dequeue
+      causes a cross-core cache invalidation)
+    - The shared_mutex internal state (touched by both the matcher writer and reader
+      threads)
+    - Portfolio objects (updated by fill callbacks, read by TUI)
+
+    perf c2c report shows which cache lines have the highest "hitm" rate, pointing
+    directly at false sharing hot spots. The fix is usually __attribute__((aligned(64)))
+    or std::hardware_destructive_interference_size padding between variables.
+
+
+46. How would you cut p99 latency from 166µs to under 10µs?
+
+    In rough order of impact:
+
+    First: eliminate allocations on the hot path. Replace std::list<OrderId> with a
+    pool-allocated structure or a circular buffer using pre-allocated memory. Every
+    new/delete on the hot path is a potential latency spike. Pool allocation makes
+    allocation O(1) with no kernel involvement. This alone likely halves the tail.
+
+    Second: replace shared_mutex with a seqlock for the order book. The ~16% of CPU
+    time in lock primitives corresponds to synchronization overhead. A seqlock for a
+    single writer / many readers eliminates atomic RMW on the read path entirely —
+    readers just check a sequence counter, retry if odd. Combined with __attribute__
+    aligned padding to prevent false sharing on the counter, this removes most
+    synchronization cost.
+
+    Third: kernel bypass for order ingestion. At this latency target, the OS scheduler
+    itself becomes a source of jitter. Real ultra-low-latency systems use busy-spinning
+    (no sched_yield, no sleep, dedicated CPU core with isolcpus) and kernel-bypass
+    networking (DPDK, RDMA) to eliminate OS scheduling from the critical path entirely.
+    This is an architectural change, not a code optimization.
