@@ -45,14 +45,14 @@ make bench         # builds + runs ./build/benchmarks
 
 ### C++ Core (`src/`, `include/`)
 
-- **Exchange** (`include/exchange.h`) — top-level orchestrator. Owns `OrderMatcher`, `TraderRegistry`, `EventBus`, and user `Portfolio` map. Key methods: `start(seed_price)`, `stop()`, `submit_order()`, `cancel_order()`, `book_snapshot()`, `portfolio_snapshot()`, `registry()`.
-- **OrderMatcher** — processes orders on a dedicated worker thread using moodycamel `ConcurrentQueue<Command>`. Handles all four order types (Limit, Market, StopLimit, StopMarket) with GTC/IOC/FOK time-in-force. Self-match prevention. Stop orders triggered by last trade price.
-- **OrderBook** — `boost::container::flat_map<Price, PriceLevel>` for cache-friendly sorted levels. `shared_mutex` for concurrent reads. Snapshot-before-callback pattern in walk methods to prevent deadlocks.
-- **EventBus** — type-safe pub/sub using `std::type_index` + `std::any`. `shared_mutex` for concurrent publish. Subscription tokens for cleanup. Events: `FillEvent`, `BookUpdateEvent`, `OrderAcceptedEvent`, `OrderRejectedEvent`, `OrderCancelledEvent`.
-- **TraderRegistry** (`include/trader_registry.h`) — owns `LatentPrice`, runs 3 trader types on a configurable tick thread (default 200ms). Methods: `add_market_maker/informed_trader/noise_trader`, `pause_all/resume_all`, `set_market_maker_count/informed_count/noise_count`, `set_sigma`, `set_market_maker_spread`, `set_tick_interval_ms`.
-- **LatentPrice** (`include/latent_price.h`) — header-only GBM fair value. Zero-drift, configurable σ (default 0.0003). `std::atomic<Price>` for thread-safe reads. `tick()` advances one GBM step.
+- **Exchange** (`include/engine/exchange.h`) — top-level orchestrator. Owns `OrderMatcher`, `TraderRegistry`, `EventBus`, and user `Portfolio` map. Key methods: `start(seed_price)`, `stop()`, `submit_order()`, `cancel_order()`, `book_snapshot()`, `portfolio_snapshot()`, `registry()`.
+- **OrderMatcher** (`include/engine/order_matcher.h`) — processes orders on a dedicated worker thread using moodycamel `ConcurrentQueue<Command>`. Handles all four order types (Limit, Market, StopLimit, StopMarket) with GTC/IOC/FOK time-in-force. Self-match prevention. Stop orders triggered by last trade price.
+- **OrderBook** (`include/engine/order_book.h`) — `boost::container::flat_map<Price, PriceLevel>` for cache-friendly sorted levels. `shared_mutex` for concurrent reads. Snapshot-before-callback pattern in walk methods to prevent deadlocks.
+- **EventBus** (`include/engine/event_bus.h`) — type-safe pub/sub using `std::type_index` + `std::any`. `shared_mutex` for concurrent publish. Subscription tokens for cleanup. Events: `FillEvent`, `BookUpdateEvent`, `OrderAcceptedEvent`, `OrderRejectedEvent`, `OrderCancelledEvent`.
+- **TraderRegistry** (`include/market/trader_registry.h`) — owns `LatentPrice`, runs 3 trader types on a configurable tick thread (default 200ms). Methods: `add_market_maker/informed_trader/noise_trader`, `pause_all/resume_all`, `set_market_maker_count/informed_count/noise_count`, `set_sigma`, `set_market_maker_spread`, `set_tick_interval_ms`.
+- **LatentPrice** (`include/market/latent_price.h`) — header-only GBM fair value. Zero-drift, configurable σ (default 0.0003). `std::atomic<Price>` for thread-safe reads. `tick()` advances one GBM step.
 - **Portfolio** — per-trader balance, position, avg cost, unrealized PnL. Thread-safe with `std::mutex`.
-- **StatsTracker** (`include/stats_tracker.h`) — header-only rolling 5-second window. Subscribes to `OrderAcceptedEvent`. `snapshot()` returns p50/p99 latency (µs) and orders/sec.
+- **StatsTracker** (`include/engine/stats_tracker.h`) — header-only rolling 5-second window. Subscribes to `OrderAcceptedEvent`. `snapshot()` returns p50/p99 latency (µs) and orders/sec.
 
 ### Trader Types (`include/traders/`)
 
@@ -88,8 +88,17 @@ Slash commands:
 
 `uint64_t` fixed-point where `10000 = $1.00` (e.g. $64,200 = 642,000,000).
 
+### Directory Layout
+
+`include/` and `src/` are organized by subsystem, mirrored between the two:
+
+- `core/` — pure data types with zero dependencies on other subsystems (`order.h`: `Order` variant, `Side`, `TimeInForce`, `Fill`, price/qty typedefs).
+- `engine/` — the exchange itself: `order_book.h`, `exchange_events.h`, `order_matcher.h`, `event_bus.h`, `exchange.h`, `portfolio.h`, `stats_tracker.h`.
+- `market/` — the simulated ecosystem trading against the engine: `latent_price.h`, `trader.h`, `trader_registry.h`, `traders/{market_maker,informed_trader,noise_trader}.h`.
+- `tui/` — the ftxui frontend: `tui.h`, `order_command_parser.h`.
+
 ### Include Path Convention
 
 Two CMake targets with different roots:
-- `core_lib` / `trading_engine` have `${PROJECT_SOURCE_DIR}/include` in their include path → source files use `#include "order.h"`, `#include "traders/market_maker.h"` etc.
-- `tests` target has `${PROJECT_SOURCE_DIR}` (repo root) → test files use `#include "include/order.h"`, `#include "include/traders/market_maker.h"` etc.
+- `core_lib` / `trading_engine` have `${PROJECT_SOURCE_DIR}/include` in their include path → source files use `#include "core/order.h"`, `#include "engine/exchange.h"`, `#include "market/traders/market_maker.h"` etc. — always relative to the `include/` root, never relative to the including file's own directory.
+- `tests` target has `${PROJECT_SOURCE_DIR}` (repo root) → test files use `#include "include/core/order.h"`, `#include "include/engine/exchange.h"` etc.
