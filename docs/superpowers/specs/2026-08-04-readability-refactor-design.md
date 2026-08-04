@@ -32,8 +32,8 @@ New layout, mirrored between `include/` and `src/`:
 
 ```
 include/
-  core/       order.h, exchange_events.h          (POD types + events, no logic, no deps on the rest)
-  engine/     order_book.h, order_matcher.h, event_bus.h,
+  core/       order.h                              (POD order/side/TIF types, zero deps on the rest)
+  engine/     order_book.h, exchange_events.h, order_matcher.h, event_bus.h,
               exchange.h, portfolio.h, stats_tracker.h
   market/     latent_price.h, trader.h, trader_registry.h,
               traders/market_maker.h, informed_trader.h, noise_trader.h
