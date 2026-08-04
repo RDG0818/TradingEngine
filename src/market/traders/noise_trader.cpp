@@ -1,5 +1,5 @@
 // src/traders/noise_trader.cpp
-#include "traders/noise_trader.h"
+#include "market/traders/noise_trader.h"
 #include <algorithm>
 #include <cmath>
 #include <chrono>

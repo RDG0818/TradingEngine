@@ -4,6 +4,10 @@
 #include <random>
 #include "core/order.h"
 
+// Header-only zero-drift Geometric Brownian Motion process standing in
+// for a theoretical fair value. Stored as an atomic Price so any
+// trader thread can read it lock-free; sigma controls per-tick
+// volatility.
 class LatentPrice {
 public:
     explicit LatentPrice(Price seed_price, double sigma = 0.0003)

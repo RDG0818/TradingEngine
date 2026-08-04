@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 #include <vector>
-#include "include/latent_price.h"
-#include "include/traders/market_maker.h"
-#include "include/traders/informed_trader.h"
+#include "include/market/latent_price.h"
+#include "include/market/traders/market_maker.h"
+#include "include/market/traders/informed_trader.h"
 
 TEST(MarketMaker, SubmitsBidAndAsk) {
     LatentPrice lp(640000000);
@@ -175,7 +175,7 @@ TEST(InformedTrader, SellsWhenSignalBelowThreshold) {
 }
 
 // ---------- NoiseTrader tests ----------
-#include "include/traders/noise_trader.h"
+#include "include/market/traders/noise_trader.h"
 
 TEST(NoiseTrader, SubmitsOrdersOnTick) {
     // lambda=1000 ensures near-certain order submission on a single tick

@@ -6,7 +6,7 @@
 #include <unordered_set>
 #include <vector>
 #include "engine/exchange.h"
-#include "trader_registry.h"
+#include "market/trader_registry.h"
 #include "engine/stats_tracker.h"
 #include "core/order.h"
 

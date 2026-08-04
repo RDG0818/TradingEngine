@@ -4,7 +4,7 @@
 #include "engine/order_book.h"
 #include "engine/order_matcher.h"
 #include "engine/event_bus.h"
-#include "trader_registry.h"
+#include "market/trader_registry.h"
 #include "engine/portfolio.h"
 #include "engine/exchange_events.h"
 #include <atomic>

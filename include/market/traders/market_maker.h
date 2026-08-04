@@ -1,8 +1,12 @@
 #pragma once
 #include <vector>
-#include "trader.h"
-#include "latent_price.h"
+#include "market/trader.h"
+#include "market/latent_price.h"
 
+// Quotes bid+ask symmetrically around the latent fair value every
+// tick, cancelling and requoting each time. Implements Glosten-Milgrom
+// adverse selection: widens its spread up to 3x when its own fill rate
+// over a rolling window climbs too high, a sign of informed flow.
 class MarketMaker : public Trader {
 public:
     MarketMaker(TraderId id, std::string name, uint64_t balance,

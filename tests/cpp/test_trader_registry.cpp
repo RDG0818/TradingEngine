@@ -3,7 +3,7 @@
 #include <chrono>
 #include "include/engine/event_bus.h"
 #include "include/engine/order_matcher.h"
-#include "include/trader_registry.h"
+#include "include/market/trader_registry.h"
 #include "include/engine/exchange_events.h"
 
 TEST(TraderRegistry, StartsAndStopsCleanly) {

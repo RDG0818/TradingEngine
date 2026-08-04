@@ -1,5 +1,5 @@
 // src/trader_registry.cpp
-#include "trader_registry.h"
+#include "market/trader_registry.h"
 #include "engine/exchange_events.h"
 
 TraderRegistry::TraderRegistry(OrderMatcher& matcher, EventBus& bus,

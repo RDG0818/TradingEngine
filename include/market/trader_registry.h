@@ -7,13 +7,17 @@
 #include <unordered_map>
 #include <vector>
 #include "engine/event_bus.h"
-#include "latent_price.h"
+#include "market/latent_price.h"
 #include "engine/order_matcher.h"
-#include "trader.h"
-#include "traders/market_maker.h"
-#include "traders/informed_trader.h"
-#include "traders/noise_trader.h"
+#include "market/trader.h"
+#include "market/traders/market_maker.h"
+#include "market/traders/informed_trader.h"
+#include "market/traders/noise_trader.h"
 
+// Owns the LatentPrice GBM process and drives all automated traders
+// (MarketMaker, InformedTrader, NoiseTrader) on one configurable tick
+// thread. Each tick advances the fair value once, then lets every
+// active trader react to it — this is what produces price action.
 class TraderRegistry {
 public:
     TraderRegistry(OrderMatcher& matcher, EventBus& bus,

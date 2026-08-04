@@ -17,6 +17,9 @@ struct TraderMetrics {
     int64_t position{0};
 };
 
+// Base class for all automated trader types. Holds the submit/cancel
+// hooks into the matcher plus the static order-ID allocator every
+// trader (and the TUI, for user orders) draws from.
 class Trader {
 public:
     explicit Trader(TraderId id, std::string name, uint64_t starting_balance);

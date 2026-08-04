@@ -1,9 +1,13 @@
 // include/traders/informed_trader.h
 #pragma once
 #include <random>
-#include "trader.h"
-#include "latent_price.h"
+#include "market/trader.h"
+#include "market/latent_price.h"
 
+// Simulates a trader with a noisy signal about true value. Submits an
+// IOC limit order at the signal price whenever it diverges from the
+// last trade price beyond a threshold — directional pressure that
+// drives price discovery. Never rests an order.
 class InformedTrader : public Trader {
 public:
     InformedTrader(TraderId id, std::string name, uint64_t balance,

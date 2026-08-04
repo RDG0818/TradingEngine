@@ -35,11 +35,11 @@ set(CORE_SOURCES
     src/engine/order_book.cpp
     src/engine/order_matcher.cpp
     src/engine/portfolio.cpp
-    src/trader.cpp
-    src/trader_registry.cpp
-    src/traders/market_maker.cpp
-    src/traders/informed_trader.cpp
-    src/traders/noise_trader.cpp
+    src/market/trader.cpp
+    src/market/trader_registry.cpp
+    src/market/traders/market_maker.cpp
+    src/market/traders/informed_trader.cpp
+    src/market/traders/noise_trader.cpp
 )
 
 add_library(core_lib STATIC ${CORE_SOURCES})

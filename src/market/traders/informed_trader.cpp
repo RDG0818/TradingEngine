@@ -1,5 +1,5 @@
 // src/traders/informed_trader.cpp
-#include "traders/informed_trader.h"
+#include "market/traders/informed_trader.h"
 #include <cmath>
 #include <algorithm>
 

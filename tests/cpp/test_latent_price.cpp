@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "include/latent_price.h"
+#include "include/market/latent_price.h"
 
 TEST(LatentPrice, InitializesToSeedPrice) {
     LatentPrice lp(640000000);  // $64,000.00

@@ -7,7 +7,7 @@
 #include <iomanip>
 #include "engine/exchange_events.h"
 #include "core/order.h"
-#include "trader.h"
+#include "market/trader.h"
 
 using namespace ftxui;
 

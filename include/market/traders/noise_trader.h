@@ -1,9 +1,14 @@
 // include/traders/noise_trader.h
 #pragma once
-#include "trader.h"
+#include "market/trader.h"
 #include <random>
 #include <limits>
 
+// Uninformed liquidity: Poisson-arrival orders, random side,
+// log-normal size, mostly limit near mid with some market orders
+// mixed in. Provides the background flow that makes the book behave
+// like a real one instead of two rational agents talking past each
+// other.
 class NoiseTrader : public Trader {
 public:
     NoiseTrader(TraderId id, std::string name, uint64_t balance,
