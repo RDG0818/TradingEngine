@@ -54,7 +54,7 @@ make bench         # builds + runs ./build/benchmarks
 - **Portfolio** — per-trader balance, position, avg cost, unrealized PnL. Thread-safe with `std::mutex`.
 - **StatsTracker** (`include/engine/stats_tracker.h`) — header-only rolling 5-second window. Subscribes to `OrderAcceptedEvent`. `snapshot()` returns p50/p99 latency (µs) and orders/sec.
 
-### Trader Types (`include/traders/`)
+### Trader Types (`include/market/traders/`)
 
 | Trader | Behavior |
 |--------|----------|
