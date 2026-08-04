@@ -5,9 +5,9 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
-#include "exchange.h"
+#include "engine/exchange.h"
 #include "trader_registry.h"
-#include "stats_tracker.h"
+#include "engine/stats_tracker.h"
 #include "core/order.h"
 
 namespace ftxui { class ScreenInteractive; }

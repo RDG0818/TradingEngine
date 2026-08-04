@@ -1,6 +1,6 @@
 // src/trader_registry.cpp
 #include "trader_registry.h"
-#include "exchange_events.h"
+#include "engine/exchange_events.h"
 
 TraderRegistry::TraderRegistry(OrderMatcher& matcher, EventBus& bus,
                                Price seed_price, double sigma)

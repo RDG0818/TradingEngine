@@ -2,10 +2,10 @@
 #include <atomic>
 #include <thread>
 #include <vector>
-#include "include/event_bus.h"
-#include "include/exchange.h"
+#include "include/engine/event_bus.h"
+#include "include/engine/exchange.h"
 #include "include/core/order.h"
-#include "include/exchange_events.h"
+#include "include/engine/exchange_events.h"
 
 // ─── Shared order ID counter ───────────────────────────────────────────────
 static std::atomic<OrderId> g_oid{500000};

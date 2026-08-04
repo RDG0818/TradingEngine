@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 #include <thread>
 #include <chrono>
-#include "include/event_bus.h"
-#include "include/order_matcher.h"
+#include "include/engine/event_bus.h"
+#include "include/engine/order_matcher.h"
 #include "include/trader_registry.h"
-#include "include/exchange_events.h"
+#include "include/engine/exchange_events.h"
 
 TEST(TraderRegistry, StartsAndStopsCleanly) {
     EventBus bus;

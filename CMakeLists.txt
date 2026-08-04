@@ -30,11 +30,11 @@ FetchContent_MakeAvailable(ftxui)
 # NOTE: new trader sources (informed_trader, noise_trader) and tui sources
 # are added in later tasks. Only currently-existing sources are listed here.
 set(CORE_SOURCES
-    src/event_bus.cpp
-    src/exchange.cpp
-    src/order_book.cpp
-    src/order_matcher.cpp
-    src/portfolio.cpp
+    src/engine/event_bus.cpp
+    src/engine/exchange.cpp
+    src/engine/order_book.cpp
+    src/engine/order_matcher.cpp
+    src/engine/portfolio.cpp
     src/trader.cpp
     src/trader_registry.cpp
     src/traders/market_maker.cpp

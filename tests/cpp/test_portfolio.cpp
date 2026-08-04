@@ -1,6 +1,6 @@
 // tests/cpp/test_portfolio.cpp
 #include <gtest/gtest.h>
-#include "include/portfolio.h"
+#include "include/engine/portfolio.h"
 
 TEST(Portfolio, InitialState) {
     Portfolio p(1000000ULL); // $100.00 starting balance

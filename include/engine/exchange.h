@@ -1,12 +1,12 @@
 // include/exchange.h
 #pragma once
 #include "core/order.h"
-#include "order_book.h"
-#include "order_matcher.h"
-#include "event_bus.h"
+#include "engine/order_book.h"
+#include "engine/order_matcher.h"
+#include "engine/event_bus.h"
 #include "trader_registry.h"
-#include "portfolio.h"
-#include "exchange_events.h"
+#include "engine/portfolio.h"
+#include "engine/exchange_events.h"
 #include <atomic>
 #include <deque>
 #include <memory>
@@ -31,6 +31,10 @@ struct PortfolioSnapshot {
     Price    avg_cost{0};
 };
 
+// Top-level orchestrator: owns the OrderMatcher, TraderRegistry,
+// EventBus, and the per-trader Portfolio map. This is the single entry
+// point a frontend talks to — submit_order/cancel_order/snapshots all
+// flow through here instead of touching subsystems directly.
 class Exchange {
 public:
     Exchange();

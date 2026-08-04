@@ -10,6 +10,10 @@
 
 using SubscriptionToken = uint64_t;
 
+// Type-safe pub/sub keyed by std::type_index with handlers stored as
+// std::any. Publish takes a shared lock so multiple publishers never
+// block each other; subscribe/unsubscribe take an exclusive lock since
+// those are the only operations that mutate the handler map.
 class EventBus {
 public:
     template<typename EventType>

@@ -4,9 +4,13 @@
 #include <deque>
 #include <mutex>
 #include <vector>
-#include "event_bus.h"
-#include "exchange_events.h"
+#include "engine/event_bus.h"
+#include "engine/exchange_events.h"
 
+// Header-only rolling latency/throughput tracker. Subscribes to
+// OrderAcceptedEvent and keeps a 5-second sliding window of
+// (timestamp, latency) samples; snapshot() derives p50/p99 latency and
+// orders/sec from whatever's still in the window.
 class StatsTracker {
 public:
     struct Snapshot {

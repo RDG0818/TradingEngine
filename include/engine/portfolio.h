@@ -3,6 +3,9 @@
 #include "core/order.h"
 #include <mutex>
 
+// Per-trader balance/position/avg-cost accounting, updated on every
+// fill via apply_fill. Thread-safe with its own mutex since fills can
+// arrive from the matcher thread while a reader takes a snapshot.
 class Portfolio {
 public:
     explicit Portfolio(uint64_t starting_balance);

@@ -1,8 +1,8 @@
 // include/order_matcher.h
 #pragma once
 #include "core/order.h"
-#include "order_book.h"
-#include "event_bus.h"
+#include "engine/order_book.h"
+#include "engine/event_bus.h"
 #include <concurrentqueue.h>
 #include <atomic>
 #include <chrono>
@@ -10,6 +10,10 @@
 #include <variant>
 #include <unordered_map>
 
+// Processes every order/cancel on one dedicated worker thread, fed by a
+// lock-free moodycamel::ConcurrentQueue so callers on any thread never
+// block on submit(). All book mutation happens without locks on this
+// one thread; concurrent readers rely on OrderBook's shared_mutex.
 class OrderMatcher {
 public:
     explicit OrderMatcher(EventBus& bus);

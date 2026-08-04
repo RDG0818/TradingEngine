@@ -1,6 +1,6 @@
 // tests/cpp/test_order_book.cpp
 #include <gtest/gtest.h>
-#include "include/order_book.h"
+#include "include/engine/order_book.h"
 
 static LimitOrder make_limit(OrderId id, TraderId tid, Side side, Price price, Quantity qty) {
     return {id, tid, side, price, qty, TimeInForce::GTC, {}};

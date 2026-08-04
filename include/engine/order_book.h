@@ -25,6 +25,10 @@ struct BookSnapshot {
 // Return true to stop walking, false to continue.
 using BookWalkCallback = std::function<bool(Price, Quantity, const std::vector<OrderId>&)>;
 
+// Price-time-priority limit order book. Two boost::container::flat_map
+// levels (bids, asks) for cache-friendly sorted access. A shared_mutex
+// lets readers (TUI snapshots, trader signal checks) run concurrently;
+// the matcher thread takes an exclusive lock only while mutating.
 class OrderBook {
 public:
     void add_order(const LimitOrder& order);
