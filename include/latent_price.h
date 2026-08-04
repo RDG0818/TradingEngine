@@ -2,7 +2,7 @@
 #include <atomic>
 #include <cmath>
 #include <random>
-#include "order.h"
+#include "core/order.h"
 
 class LatentPrice {
 public:

@@ -4,7 +4,7 @@
 #include <vector>
 #include "include/event_bus.h"
 #include "include/exchange.h"
-#include "include/order.h"
+#include "include/core/order.h"
 #include "include/exchange_events.h"
 
 // ─── Shared order ID counter ───────────────────────────────────────────────

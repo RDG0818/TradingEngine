@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "include/order.h"
+#include "include/core/order.h"
 
 TEST(OrderTypes, VariantHoldsLimitOrder) {
     LimitOrder lo{1, 10, Side::Buy, 642000000ULL, 100, TimeInForce::GTC, {}};

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include "include/event_bus.h"
-#include "include/order.h"
+#include "include/core/order.h"
 
 struct PriceUpdate { Price price; };
 

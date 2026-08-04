@@ -3,6 +3,9 @@
 #include <chrono>
 #include <variant>
 
+// Core order/fill data types shared by the engine and market layers.
+// Pure data — no logic, no dependencies on any other subsystem.
+
 // Prices: fixed-point, 10000 units = $1.00  (e.g. $64,200 = 642,000,000)
 // Quantities: integer units (e.g. 100 = 1.00 BTC at 2 decimal places)
 using OrderId   = uint64_t;

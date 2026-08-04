@@ -8,7 +8,7 @@
 #include "exchange.h"
 #include "trader_registry.h"
 #include "stats_tracker.h"
-#include "order.h"
+#include "core/order.h"
 
 namespace ftxui { class ScreenInteractive; }
 

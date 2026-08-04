@@ -6,7 +6,7 @@
 #include <sstream>
 #include <iomanip>
 #include "exchange_events.h"
-#include "order.h"
+#include "core/order.h"
 #include "trader.h"
 
 using namespace ftxui;
