@@ -1,4 +1,3 @@
-// src/traders/informed_trader.cpp
 #include "market/traders/informed_trader.h"
 #include <cmath>
 #include <algorithm>

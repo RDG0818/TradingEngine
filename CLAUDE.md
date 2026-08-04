@@ -19,7 +19,7 @@ make run           # ./build/trading_engine
 make run -- --seed 50000   # seed at $50,000
 
 # Tests
-make test          # runs C++ test suite (48 tests, 12 suites)
+make test          # runs C++ test suite
 ./build/tests      # same, directly
 
 # Benchmarks (throughput, match latency, contention)

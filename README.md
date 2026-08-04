@@ -68,7 +68,7 @@ Slash commands to control the simulation:
 /vol <0.0–1.0>               GBM volatility σ       (default: 0.0003)
 /spread <dollars>            market maker half-spread (default: $2.00)
 /speed <1–10>                tick speed, 1=2s 10=200ms (default: 1)
-/pause / /resume              halt or restart all automated traders
+/pause / /resume             halt or restart all automated traders
 /traders <mm|informed|noise> <n>   set trader count per type
 /help                        show command reference
 ```

@@ -1,4 +1,3 @@
-// src/trader.cpp
 #include "market/trader.h"
 
 std::atomic<OrderId> Trader::next_order_id_{100000};

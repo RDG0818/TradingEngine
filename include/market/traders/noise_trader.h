@@ -1,4 +1,3 @@
-// include/traders/noise_trader.h
 #pragma once
 #include "market/trader.h"
 #include <random>

@@ -1,4 +1,3 @@
-// include/trader.h
 #pragma once
 #include "core/order.h"
 #include "engine/portfolio.h"

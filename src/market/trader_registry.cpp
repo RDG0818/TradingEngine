@@ -1,4 +1,3 @@
-// src/trader_registry.cpp
 #include "market/trader_registry.h"
 #include "engine/exchange_events.h"
 

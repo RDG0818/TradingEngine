@@ -27,8 +27,6 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(ftxui)
 
 # Core C++ library (no Python, no TUI)
-# NOTE: new trader sources (informed_trader, noise_trader) and tui sources
-# are added in later tasks. Only currently-existing sources are listed here.
 set(CORE_SOURCES
     src/engine/event_bus.cpp
     src/engine/exchange.cpp

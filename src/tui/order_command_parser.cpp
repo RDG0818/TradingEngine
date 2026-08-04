@@ -1,6 +1,19 @@
 #include "tui/order_command_parser.h"
 #include "market/trader.h"
+#include <iomanip>
 #include <sstream>
+
+namespace {
+
+// Formats a dollar amount with two decimal places (cents), so status
+// messages don't truncate e.g. $64000.75 down to "$64000".
+std::string fmt_dollars(double v) {
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(2) << v;
+    return ss.str();
+}
+
+} // namespace
 
 std::optional<ParsedOrderCommand> parse_order_command(const std::string& cmd, TraderId user_id, std::string& error) {
     std::istringstream ss(cmd);
@@ -46,7 +59,7 @@ std::optional<ParsedOrderCommand> parse_order_command(const std::string& cmd, Tr
         result.order = LimitOrder{oid, user_id, side, price, qty, tif, {}};
         result.tracks_resting_price = (tif == TimeInForce::GTC);
         result.status = (side == Side::Buy ? "Buy " : "Sell ") + std::to_string(qty) +
-                         " @ $" + std::to_string(static_cast<int>(price_d)) +
+                         " @ $" + fmt_dollars(price_d) +
                          (tif == TimeInForce::FOK ? " FOK" : "") +
                          "  id=" + std::to_string(oid);
         return result;
@@ -75,13 +88,13 @@ std::optional<ParsedOrderCommand> parse_order_command(const std::string& cmd, Tr
             Price limit_price = static_cast<Price>(limit_d * 10000.0);
             result.order = StopLimitOrder{oid, user_id, side, stop_price, limit_price, qty, {}};
             result.status = std::string(side == Side::Buy ? "Buy " : "Sell ") + std::to_string(qty) +
-                             " stop $" + std::to_string(static_cast<int>(stop_d)) +
-                             " limit $" + std::to_string(static_cast<int>(limit_d)) +
+                             " stop $" + fmt_dollars(stop_d) +
+                             " limit $" + fmt_dollars(limit_d) +
                              "  id=" + std::to_string(oid);
         } else if (at.empty()) {
             result.order = StopMarketOrder{oid, user_id, side, stop_price, qty, {}};
             result.status = std::string(side == Side::Buy ? "Buy " : "Sell ") + std::to_string(qty) +
-                             " stop $" + std::to_string(static_cast<int>(stop_d)) +
+                             " stop $" + fmt_dollars(stop_d) +
                              "  id=" + std::to_string(oid);
         } else {
             error = "Usage: buy <qty> stop <stop_price> [@ <limit_price>]";

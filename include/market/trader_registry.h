@@ -1,4 +1,3 @@
-// include/trader_registry.h
 #pragma once
 #include <atomic>
 #include <memory>

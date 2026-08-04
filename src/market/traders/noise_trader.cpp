@@ -1,4 +1,3 @@
-// src/traders/noise_trader.cpp
 #include "market/traders/noise_trader.h"
 #include <algorithm>
 #include <cmath>

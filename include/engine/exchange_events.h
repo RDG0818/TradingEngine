@@ -1,4 +1,3 @@
-// include/exchange_events.h
 #pragma once
 #include <chrono>
 #include "core/order.h"

@@ -1,4 +1,3 @@
-// include/traders/informed_trader.h
 #pragma once
 #include <random>
 #include "market/trader.h"
