@@ -40,6 +40,7 @@ set(CORE_SOURCES
     src/market/traders/market_maker.cpp
     src/market/traders/informed_trader.cpp
     src/market/traders/noise_trader.cpp
+    src/tui/order_command_parser.cpp
 )
 
 add_library(core_lib STATIC ${CORE_SOURCES})

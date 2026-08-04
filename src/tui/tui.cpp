@@ -8,6 +8,7 @@
 #include "engine/exchange_events.h"
 #include "core/order.h"
 #include "market/trader.h"
+#include "tui/order_command_parser.h"
 
 using namespace ftxui;
 
@@ -341,14 +342,14 @@ void TUI::handle_command(const std::string& cmd) {
 }
 
 void TUI::handle_order_command(const std::string& cmd) {
-    std::istringstream ss(cmd);
-    std::string token;
-    ss >> token;
-
     auto set_status = [this](const std::string& msg) {
         std::lock_guard lock(state_mutex_);
         status_message_ = msg;
     };
+
+    std::istringstream peek(cmd);
+    std::string token;
+    peek >> token;
 
     if (token == "q" || token == "quit") {
         if (screen_) screen_->ExitLoopClosure()();
@@ -357,49 +358,25 @@ void TUI::handle_order_command(const std::string& cmd) {
 
     if (token == "cancel") {
         OrderId id = 0;
-        if (!(ss >> id)) { set_status("Usage: cancel <order_id>"); return; }
+        if (!(peek >> id)) { set_status("Usage: cancel <order_id>"); return; }
         exchange_.cancel_order(id);
         set_status("Cancel requested for #" + std::to_string(id));
         return;
     }
 
-    Side side;
-    if (token == "buy")       side = Side::Buy;
-    else if (token == "sell") side = Side::Sell;
-    else { set_status("Unknown command. Type /help."); return; }
+    std::string error;
+    auto parsed = parse_order_command(cmd, user_id_, error);
+    if (!parsed) { set_status(error); return; }
 
-    double qty_d = 0;
-    if (!(ss >> qty_d) || qty_d <= 0) {
-        set_status("Usage: buy/sell <qty> [@ <price>]");
-        return;
+    if (parsed->tracks_resting_price) {
+        const auto& lo = std::get<LimitOrder>(parsed->order);
+        std::lock_guard lock(state_mutex_);
+        if (lo.side == Side::Buy) user_bid_prices_.insert(lo.price);
+        else                      user_ask_prices_.insert(lo.price);
     }
-    Quantity qty = static_cast<Quantity>(qty_d);
-    if (qty == 0) qty = 1;
 
-    std::string at;
-    ss >> at;
-
-    if (at == "@") {
-        double price_d = 0;
-        if (!(ss >> price_d) || price_d <= 0) {
-            set_status("Usage: buy <qty> @ <price>"); return;
-        }
-        Price price = static_cast<Price>(price_d * 10000.0);
-        OrderId oid = Trader::alloc_order_id();
-        {
-            std::lock_guard lock(state_mutex_);
-            if (side == Side::Buy) user_bid_prices_.insert(price);
-            else                   user_ask_prices_.insert(price);
-        }
-        exchange_.submit_order(LimitOrder{oid, user_id_, side, price, qty, TimeInForce::GTC, {}});
-        set_status((side == Side::Buy ? "Buy " : "Sell ") + std::to_string(qty) +
-                   " @ $" + std::to_string(static_cast<int>(price_d)) + "  id=" + std::to_string(oid));
-    } else {
-        OrderId oid = Trader::alloc_order_id();
-        exchange_.submit_order(MarketOrder{oid, user_id_, side, qty, TimeInForce::IOC, {}});
-        set_status(std::string("Market ") + (side == Side::Buy ? "buy " : "sell ") +
-                   std::to_string(qty) + "  id=" + std::to_string(oid));
-    }
+    exchange_.submit_order(parsed->order);
+    set_status(parsed->status);
 }
 
 void TUI::handle_slash_command(const std::string& cmd) {
@@ -415,12 +392,17 @@ void TUI::handle_slash_command(const std::string& cmd) {
     if (verb == "help") {
         set_status(
             "ORDERS\n"
-            "  buy <qty> @ <price>   limit buy (GTC)\n"
-            "  sell <qty> @ <price>  limit sell (GTC)\n"
-            "  buy <qty>             market buy (IOC)\n"
-            "  sell <qty>            market sell (IOC)\n"
-            "  cancel <id>           cancel resting order\n"
-            "  q / quit              exit\n"
+            "  buy <qty> @ <price>        limit buy (GTC)\n"
+            "  sell <qty> @ <price>       limit sell (GTC)\n"
+            "  buy <qty> @ <price> fok    limit buy, fill-or-kill\n"
+            "  sell <qty> @ <price> fok   limit sell, fill-or-kill\n"
+            "  buy <qty>                  market buy (IOC)\n"
+            "  sell <qty>                 market sell (IOC)\n"
+            "  buy <qty> stop <price>              stop-market buy\n"
+            "  buy <qty> stop <price> @ <limit>    stop-limit buy\n"
+            "  sell <qty> stop <price> [@ <limit>] stop-market/stop-limit sell\n"
+            "  cancel <id>                cancel resting order\n"
+            "  q / quit                   exit\n"
             "\n"
             "MARKET CONTROLS  (defaults)\n"
             "  /vol <0.0-1.0>        GBM volatility sigma (0.0003)\n"
