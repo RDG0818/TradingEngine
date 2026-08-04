@@ -64,6 +64,30 @@ void OrderMatcher::process_limit(const LimitOrder& order, std::chrono::steady_cl
 }
 
 void OrderMatcher::try_match_limit(const LimitOrder& taker, std::chrono::steady_clock::time_point dequeue_tp) {
+    if (taker.tif == TimeInForce::FOK) {
+        // All-or-nothing: sum available quantity at qualifying price levels
+        // before executing anything. Doesn't exclude the taker's own resting
+        // orders from the count (self-match prevention would still block
+        // those fills) — an extremely rare edge case where a trader is
+        // resting on both sides at a qualifying price is not handled here.
+        Quantity available = 0;
+        auto liquidity_cb = [&](Price level_price, Quantity level_qty, const std::vector<OrderId>&) -> bool {
+            bool price_ok = (taker.side == Side::Buy)
+                ? (level_price <= taker.price)
+                : (level_price >= taker.price);
+            if (!price_ok) return true; // stop walking
+            available += level_qty;
+            return available >= taker.qty; // stop early once enough
+        };
+        if (taker.side == Side::Buy) book_.for_each_ask(liquidity_cb);
+        else                          book_.for_each_bid(liquidity_cb);
+
+        if (available < taker.qty) {
+            bus_.publish(OrderRejectedEvent{taker.id, taker.trader_id, "insufficient_liquidity_fok"});
+            return;
+        }
+    }
+
     Quantity remaining = taker.qty;
     auto now = std::chrono::steady_clock::now().time_since_epoch();
     Price last_price = 0;

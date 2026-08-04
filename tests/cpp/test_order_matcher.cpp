@@ -92,6 +92,67 @@ TEST(OrderMatcher, SelfMatchPrevented) {
     matcher.stop();
 }
 
+TEST(OrderMatcher, FOKFullyFillsWhenLiquiditySufficient) {
+    EventBus bus;
+    OrderMatcher matcher(bus);
+    matcher.start();
+
+    std::vector<Fill> fills;
+    bus.subscribe<FillEvent>([&](const FillEvent& e) { fills.push_back(e.fill); });
+
+    submit_and_wait(matcher, make_limit(1, 10, Side::Sell, 100, 50));
+    submit_and_wait(matcher, make_limit(2, 11, Side::Buy, 100, 50, TimeInForce::FOK));
+
+    ASSERT_EQ(fills.size(), 1u);
+    EXPECT_EQ(fills[0].fill_qty, 50ULL);
+    EXPECT_FALSE(matcher.book().best_ask().has_value());
+
+    matcher.stop();
+}
+
+TEST(OrderMatcher, FOKRejectsWithZeroFillsWhenLiquidityInsufficient) {
+    EventBus bus;
+    OrderMatcher matcher(bus);
+    matcher.start();
+
+    std::vector<Fill> fills;
+    bool rejected = false;
+    bus.subscribe<FillEvent>([&](const FillEvent& e) { fills.push_back(e.fill); });
+    bus.subscribe<OrderRejectedEvent>([&](const OrderRejectedEvent& e) {
+        if (e.order_id == 2) rejected = true;
+    });
+
+    // Only 30 units resting; FOK taker wants 50 — must reject with zero fills.
+    submit_and_wait(matcher, make_limit(1, 10, Side::Sell, 100, 30));
+    submit_and_wait(matcher, make_limit(2, 11, Side::Buy, 100, 50, TimeInForce::FOK));
+
+    EXPECT_TRUE(fills.empty());
+    EXPECT_TRUE(rejected);
+    // The resting sell order must be untouched — no partial execution.
+    ASSERT_TRUE(matcher.book().best_ask().has_value());
+    EXPECT_EQ(*matcher.book().best_ask(), 100ULL);
+
+    matcher.stop();
+}
+
+TEST(OrderMatcher, FOKRejectsWithNoLiquidityAtAll) {
+    EventBus bus;
+    OrderMatcher matcher(bus);
+    matcher.start();
+
+    bool rejected = false;
+    bus.subscribe<OrderRejectedEvent>([&](const OrderRejectedEvent& e) {
+        if (e.order_id == 1) rejected = true;
+    });
+
+    submit_and_wait(matcher, make_limit(1, 10, Side::Buy, 100, 50, TimeInForce::FOK));
+
+    EXPECT_TRUE(rejected);
+    EXPECT_FALSE(matcher.book().best_bid().has_value());
+
+    matcher.stop();
+}
+
 TEST(OrderMatcher, CancelRemovesOrder) {
     EventBus bus;
     OrderMatcher matcher(bus);
