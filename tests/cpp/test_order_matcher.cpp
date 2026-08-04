@@ -153,6 +153,42 @@ TEST(OrderMatcher, FOKRejectsWithNoLiquidityAtAll) {
     matcher.stop();
 }
 
+TEST(OrderMatcher, FOKRejectsWhenLevelTotalIsStaleFromPartialFill) {
+    EventBus bus;
+    OrderMatcher matcher(bus);
+    matcher.start();
+
+    std::vector<Fill> fills;
+    bool rejected = false;
+    bus.subscribe<FillEvent>([&](const FillEvent& e) { fills.push_back(e.fill); });
+    bus.subscribe<OrderRejectedEvent>([&](const OrderRejectedEvent& e) {
+        if (e.order_id == 3) rejected = true;
+    });
+
+    // Rest a sell order for 50, from trader 10.
+    submit_and_wait(matcher, make_limit(1, 10, Side::Sell, 100, 50));
+    // Partially fill it with an IOC buy for 30, from trader 11 — leaves 20
+    // truly available, but PriceLevel::total_qty at price 100 is still 50
+    // because partial fills don't touch total_qty (only full cancel does).
+    submit_and_wait(matcher, make_limit(2, 11, Side::Buy, 100, 30, TimeInForce::IOC));
+    ASSERT_EQ(fills.size(), 1u);
+    EXPECT_EQ(fills[0].fill_qty, 30ULL);
+    fills.clear();
+
+    // A FOK buy for 50 from a third trader must reject with zero fills:
+    // real remaining liquidity at price 100 is only 20, not the stale
+    // level total of 50.
+    submit_and_wait(matcher, make_limit(3, 12, Side::Buy, 100, 50, TimeInForce::FOK));
+
+    EXPECT_TRUE(fills.empty());
+    EXPECT_TRUE(rejected);
+    // The resting order's remaining 20 units must be untouched.
+    ASSERT_TRUE(matcher.book().best_ask().has_value());
+    EXPECT_EQ(*matcher.book().best_ask(), 100ULL);
+
+    matcher.stop();
+}
+
 TEST(OrderMatcher, CancelRemovesOrder) {
     EventBus bus;
     OrderMatcher matcher(bus);

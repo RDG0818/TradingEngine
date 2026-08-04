@@ -1,4 +1,3 @@
-// src/order_matcher.cpp
 #include "engine/order_matcher.h"
 #include "engine/exchange_events.h"
 #include <chrono>
@@ -66,18 +65,33 @@ void OrderMatcher::process_limit(const LimitOrder& order, std::chrono::steady_cl
 void OrderMatcher::try_match_limit(const LimitOrder& taker, std::chrono::steady_clock::time_point dequeue_tp) {
     if (taker.tif == TimeInForce::FOK) {
         // All-or-nothing: sum available quantity at qualifying price levels
-        // before executing anything. Doesn't exclude the taker's own resting
-        // orders from the count (self-match prevention would still block
-        // those fills) — an extremely rare edge case where a trader is
-        // resting on both sides at a qualifying price is not handled here.
+        // before executing anything. PriceLevel::total_qty is stale for any
+        // level containing a partially-filled resting order (it's only
+        // decremented on full cancel, not on partial fill — partial fills
+        // live in filled_qty_ instead), so we can't sum level totals here.
+        // Mirror the actual fill loop below: walk order IDs per level, skip
+        // the taker's own resting orders (matches the fill loop's self-match
+        // skip), and add each maker's true remaining quantity.
         Quantity available = 0;
-        auto liquidity_cb = [&](Price level_price, Quantity level_qty, const std::vector<OrderId>&) -> bool {
+        auto liquidity_cb = [&](Price level_price, Quantity, const std::vector<OrderId>& ids) -> bool {
             bool price_ok = (taker.side == Side::Buy)
                 ? (level_price <= taker.price)
                 : (level_price >= taker.price);
             if (!price_ok) return true; // stop walking
-            available += level_qty;
-            return available >= taker.qty; // stop early once enough
+
+            for (OrderId id : ids) {
+                const LimitOrder* maker = book_.find_order(id);
+                if (!maker) continue;
+                if (maker->trader_id == taker.trader_id) continue; // self-match prevention
+
+                Quantity already_filled = 0;
+                auto it = filled_qty_.find(id);
+                if (it != filled_qty_.end()) already_filled = it->second;
+
+                available += maker->qty - already_filled;
+                if (available >= taker.qty) return true; // stop early once enough
+            }
+            return false;
         };
         if (taker.side == Side::Buy) book_.for_each_ask(liquidity_cb);
         else                          book_.for_each_bid(liquidity_cb);
