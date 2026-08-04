@@ -16,7 +16,7 @@ Feature-cut review: engine order types (Limit/Market/Stop-Limit/Stop-Market, GTC
 
 - Reorganize `include/` and `src/` by subsystem so the layout itself communicates the architecture.
 - Add header-level doc comments to every major class (what it is, why it exists, key invariant) — not exhaustive inline commentary.
-- Close two real gaps: no test coverage for self-match prevention, and Stop/FOK orders unreachable from the TUI.
+- Close two real gaps: no test coverage for FOK (fill-or-kill) edge cases, and Stop/FOK orders unreachable from the TUI.
 - Rewrite README for recruiter skim (quickstart first, deep dive split out) and eliminate AI-generated writing tells throughout.
 - Update `CLAUDE.md` to match the new layout so it stays authoritative.
 
@@ -24,7 +24,7 @@ Feature-cut review: engine order types (Limit/Market/Stop-Limit/Stop-Market, GTC
 
 - Any performance optimization (allocator swaps, hash map swaps, seqlocks) — deferred to phase 2.
 - New features beyond exposing existing Stop/FOK support in the TUI — deferred to phase 3.
-- A full test-coverage audit beyond the two identified gaps (self-match prevention, FOK edge cases) plus tests for the new TUI commands.
+- A full test-coverage audit beyond the identified gap (FOK edge cases) plus tests for the new TUI commands.
 
 ## Directory Restructure
 
@@ -71,11 +71,17 @@ Add command-bar syntax for the two engine features that exist but aren't reachab
 
 Update the in-TUI `/help` text and README Commands section to document the new syntax.
 
+## FOK Correctness Fix
+
+While scoping FOK test coverage, found `try_match_limit` (`src/order_matcher.cpp:66-133`) treats FOK identically to IOC: it walks the book and emits real `FillEvent`s incrementally, only deciding afterward not to rest the unfilled remainder. That's IOC semantics, not FOK — a FOK order that the book can't fully satisfy should reject with **zero** fills, not partially execute. This is a correctness bug in a feature the project's own `questions.txt` (Q10) asks you to explain.
+
+Fix: before walking the book for a FOK taker, do a read-only pass summing available quantity at qualifying price levels (using the existing `total_qty` already returned per-level by `for_each_bid`/`for_each_ask`, no need to inspect individual orders) and compare against `taker.qty`. If insufficient, publish `OrderRejectedEvent{taker.id, taker.trader_id, "insufficient_liquidity_fok"}` and return before any fills execute. If sufficient, fall through to the existing walk — since liquidity is now guaranteed sufficient, the walk will fully consume the order, so no other branch of the existing fill/rest/reject logic needs to change. Safe against concurrent mutation because the matcher is single-threaded and no other writer touches the book between the two passes within one command's processing.
+
 ## Test Coverage Additions
 
 Current gaps identified:
-- **Self-match prevention has zero test coverage** despite being a named feature in `questions.txt` (Q12) and a real correctness guarantee (`order_matcher.cpp:81`). Add a test: same `TraderId` on both sides of a potential match must not fill, order remains resting/cancelled per TIF.
-- **FOK (fill-or-kill) edge cases** are untested: partial-liquidity-then-cancel path. Add tests covering full fill, partial-liquidity-so-full-cancel, and no-liquidity-so-full-cancel.
+- Self-match prevention already has coverage (`tests/cpp/test_order_matcher.cpp:78`, `SelfMatchPrevented`) — no gap here, confirmed during planning.
+- **FOK (fill-or-kill) edge cases** are untested anywhere in the suite, and exercise the bug above. Add tests covering full fill, insufficient-liquidity-so-zero-fills (the case that currently fails before the fix), and exact-liquidity full fill.
 - **New TUI commands** (Stop-Limit, Stop-Market, FOK via command bar) get parser/dispatch tests once implemented.
 - Delete `tests/cpp/placeholder_test.cpp` — dead stub (`TEST(Placeholder, AlwaysPasses)`), superseded by the real suites.
 
@@ -103,6 +109,6 @@ Not in scope: a broader audit of every branch in every file (e.g. EventBus unsub
 ## Verification
 
 - `make build` succeeds after the directory move and include-path updates.
-- `make test` passes, including new self-match/FOK/TUI-command tests, with `placeholder_test.cpp` removed from the suite count.
+- `make test` passes, including new FOK/TUI-command tests, with `placeholder_test.cpp` removed from the suite count.
 - Manual TUI smoke test: new `stop` and `fok` commands work end-to-end (submit, see it rest/trigger/fill in the Order Book and Recent Fills panels).
 - README and DESIGN.md read-through: no mid-sentence bold-as-emphasis, no "this design means" transitions, quickstart appears before deep technical content.
