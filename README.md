@@ -34,9 +34,9 @@ A high-performance simulated trading exchange in pure C++20 with a fullscreen te
 ```bash
 git clone --recurse-submodules https://github.com/RDG0818/TradingEngine.git
 cd TradingEngine
-make build    # cmake + compile (fetches ftxui on first run)
-make run      # ./build/trading_engine
-make run -- --seed 50000   # seed at $50,000
+make build    
+make run      
+make run -- --seed 50000   
 ```
 
 ```bash

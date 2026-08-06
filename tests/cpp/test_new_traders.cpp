@@ -38,7 +38,8 @@ TEST(MarketMaker, BidBelowAskBelowLatent) {
     Price bid_price = 0, ask_price = 0;
     for (const auto& o : orders) {
         std::visit([&](const auto& x) {
-            if constexpr (requires { x.price; }) {
+            using T = std::decay_t<decltype(x)>;
+            if constexpr (std::is_same_v<T, LimitOrder>) {
                 if (x.side == Side::Buy) bid_price = x.price;
                 else ask_price = x.price;
             }
@@ -98,7 +99,7 @@ TEST(MarketMaker, WidensSpreadUnderAdverseSelection) {
             Price p = 0;
             std::visit([&](const auto& x) {
                 using T = std::decay_t<decltype(x)>;
-                if constexpr (requires { x.price; }) {
+                if constexpr (std::is_same_v<T, LimitOrder>) {
                     if (x.side == Side::Sell) p = x.price;
                 }
             }, o);
